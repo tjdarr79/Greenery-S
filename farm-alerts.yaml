@@ -1,0 +1,78 @@
+# Greenery S Alert Automations
+#
+# IMPORTANT: replace "notify.mobile_app_YOUR_PHONE" below with your actual
+# HA mobile app notify service. Find it: Settings -> Devices & Services ->
+# Mobile App -> your device -> or check Developer Tools -> Actions, search
+# "notify" to see the exact service name for your phone.
+#
+# Add these via: Settings -> Automations & Scenes -> top-right three-dot
+# menu -> Edit in YAML (if editing automations.yaml directly, paste under
+# the existing list) -- or create each one individually via the UI editor
+# using the same trigger/condition/action logic.
+
+- alias: "Farm Bridge Offline"
+  description: "Bridge lost connection - no other farm alerts are reliable until this clears"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.greenery_s_farm_farm_bridge_status
+      to: "off"
+      for:
+        minutes: 5
+  action:
+    - service: notify.mobile_app_YOUR_PHONE
+      data:
+        title: "⚠️ Farm Bridge Offline"
+        message: "The HA monitoring bridge has been disconnected for 5+ minutes. Sensor data may be stale. Check the farm PC."
+
+- alias: "Farm pH Out of Range"
+  description: "pH below 5.0 or above 7.0 in either zone - FF's documented threshold for calibration/dosing issue"
+  trigger:
+    - platform: numeric_state
+      entity_id:
+        - sensor.greenery_s_farm_cultivation_ph
+        - sensor.greenery_s_farm_nursery_ph
+      below: 5.0
+      for:
+        minutes: 5
+    - platform: numeric_state
+      entity_id:
+        - sensor.greenery_s_farm_cultivation_ph
+        - sensor.greenery_s_farm_nursery_ph
+      above: 7.0
+      for:
+        minutes: 5
+  action:
+    - service: notify.mobile_app_YOUR_PHONE
+      data:
+        title: "⚠️ pH Out of Range"
+        message: "{{ trigger.to_state.name }} is at {{ trigger.to_state.state }} - outside 5.0-7.0 range. Check calibration or dosing system."
+
+- alias: "Farm EC Critical"
+  description: "EC above 3000 - FF's documented signal for algae/debris on sensor or a clog"
+  trigger:
+    - platform: numeric_state
+      entity_id:
+        - sensor.greenery_s_farm_cultivation_ec
+        - sensor.greenery_s_farm_nursery_ec
+      above: 3000
+      for:
+        minutes: 5
+  action:
+    - service: notify.mobile_app_YOUR_PHONE
+      data:
+        title: "⚠️ EC Critical"
+        message: "{{ trigger.to_state.name }} is at {{ trigger.to_state.state }} µS/cm - check for algae/debris on the sensor or a clog restricting flow."
+
+- alias: "Farm CO2 Above Ceiling"
+  description: "CO2 above 1200 ppm ceiling - your confirmed pre-recipe-switch limit"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.greenery_s_farm_farm_co2
+      above: 1200
+      for:
+        minutes: 5
+  action:
+    - service: notify.mobile_app_YOUR_PHONE
+      data:
+        title: "⚠️ CO2 Above Ceiling"
+        message: "CO2 is at {{ trigger.to_state.state }} ppm - above the 1200 ppm ceiling. Check CO2 controller."
