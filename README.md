@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/31240127/README.md)
 # Greenery S → Home Assistant MQTT Bridge
 
 Reads live sensor data from a Freight Farms Greenery S container farm's local
@@ -163,11 +162,100 @@ That's the actual failure mode this deployment exists to survive.
   pip install ...`, `py farm_bridge.py`) — often correctly registered even
   when `pip`/`python` aren't on PATH.
 
+## Alert automations
+
+Six phone-notification automations live in `automations/`, one file each,
+covering the thresholds actually needed for daily operation. They notify
+via Home Assistant's Companion App, not email/SMS.
+
+| File | Fires when | Window | Why |
+|---|---|---|---|
+| `01-bridge-offline.yaml` | Bridge disconnects | 5 min | If this fires, every other alert below is unreliable until it clears |
+| `02-ph-out-of-range.yaml` | pH <5.0 or >7.75, either zone | 5 min | 7.75 ceiling accounts for normal post-fill readings (~7.5) that would false-trigger at a stricter 7.0 |
+| `03-ec-critical.yaml` | EC >3000, either zone | 5 min | Documented signal for algae/debris on the sensor or a clog |
+| `04-co2-below-minimum.yaml` | CO2 <500 ppm | 5 min | Tank-empty signal. 5 min gives ~55 min of lead time before starvation risk, based on observed ~1hr decline from 500→300 ppm |
+| `05-air-temp-high.yaml` | Air temp ≥80°F | **1 min** | Deliberately short — 80°F means HVAC has already lost the fight and lights need to come off; this is an emergency alert, not a routine one |
+| `06-humidity-high.yaml` | Humidity ≥80% | 5 min | Routine watch alert |
+
+**Not included, by design:** no alert on CO2 spiking *high*. Manual tank
+swaps cause expected, harmless spikes — alerting on those would just
+train you to ignore the notification. Only the low-CO2/empty-tank
+condition matters operationally.
+
+**Queued for later, not yet built:** a lower-urgency alert at 78°F (giving
+earlier warning before the 80°F emergency point), and a "Task Mode active
+>6 hours" alert.
+
+### Installing the automations
+
+HA's single-automation YAML editor rejects a multi-automation list (it
+throws `Message malformed: extra keys not allowed @ data['0']` if you try)
+— each file must be pasted in separately, one at a time:
+
+1. Settings → Automations & Scenes → **+ Add Automation**
+2. Skip the visual builder — click the three-dot menu → **Edit in YAML**
+3. Paste the full contents of one file (e.g. `01-bridge-offline.yaml`)
+4. Save
+5. Repeat for the remaining five files
+
+**Before installing any of them:** replace `notify.mobile_app_farm_phone`
+in every file with your own phone's actual notify service name — this is
+specific to how your device registered in the Companion App, not a fixed
+value. Find yours: enable Advanced Mode (click your profile icon,
+bottom-left → scroll down → toggle **Advanced Mode** on) to reveal
+Developer Tools, then **Developer Tools → Actions**, search "notify" —
+your device's service name appears in the results.
+
+### Testing before you trust them
+
+Two separate things can be broken independently — test them in this
+order so you know which one you're actually debugging:
+
+**1. Confirm notification delivery works at all**, independent of any
+automation logic:
+- Developer Tools → Actions → search "notify" → select your device's
+  service
+- In the data field, enter:
+  ```yaml
+  title: Test Alert
+  message: This is a manual test
+  ```
+- Click **Perform Action**. Phone should buzz within seconds.
+
+If this fails, the automations aren't the problem — the notify service
+name is wrong, or the Companion App isn't fully registered
+(Settings → Devices & Services → Mobile App should list your phone).
+
+**2. Confirm each trigger actually fires**, once delivery is proven:
+`numeric_state` triggers only fire on a *crossing* — if a sensor is
+already above/below the threshold when you save the automation, it will
+NOT fire retroactively just because the condition is already true. To
+test for real, temporarily set the threshold to a value just past the
+sensor's *current* reading, save, wait out the `for:` window, confirm
+the phone buzzes, then set the threshold back to its real value and save
+again.
+
+Example: if cultivation is reading 71°F and you want to test
+`05-air-temp-high.yaml`, temporarily change `above: 80` to `above: 71.5`
+— not `above: 60`, which is already true and won't trigger anything.
+
+Check Settings → Automations → open the automation → **Traces** tab to
+confirm whether it fired at all, if a test doesn't produce a
+notification and you're unsure whether the trigger or the delivery is
+at fault.
+
+
 ## Not yet built
 
-- Phone alerts / HA automations on top of these sensor entities
+- 78°F early-warning temp alert, and Task Mode >6hr alert (queued, see
+  Alert Automations section above)
 - Output relay function mapping (32 channels, `244CAB0FC00C`)
 - Write/control from HA (dosing, lighting, climate) — deliberately deferred;
   manual control mode disables Farmhand's automatic safety shutoffs (e.g.
   trough overflow protection), so any HA-side control automation needs to
   replicate those interlocks before going live
+- Remote access without paid hosting (port forwarding + Dynamic DNS,
+  ideally behind a reverse proxy with HTTPS rather than raw HTTP exposed
+  directly) — local network access via the Companion App is confirmed
+  working; off-network access is not yet configured
+- Mobile-optimized dashboard layout — current layout targets desktop width

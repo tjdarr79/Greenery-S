@@ -205,6 +205,16 @@ into the YAML.
 
 ---
 
+## Step 8 — Set up phone alerts (optional but recommended)
+
+Six alert automations live in the repo's `automations/` folder — covering
+bridge disconnection, pH/EC out of range, low CO2 (empty tank), and high
+temp/humidity. See the main `README.md`'s "Alert automations" section for
+full install and testing steps — they install through Home Assistant's
+UI, not through anything on the farm PC.
+
+---
+
 ## You're done when
 
 - `C:\Farm` contains all four files plus your filled-in `farm-bridge.env`

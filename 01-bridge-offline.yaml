@@ -1,0 +1,16 @@
+alias: Farm Bridge Offline
+description: Bridge lost connection - no other farm alerts are reliable until this clears
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_farm_bridge_status
+    to: "off"
+    for:
+      minutes: 5
+    trigger: state
+actions:
+  - data:
+      title: ⚠️ Farm Bridge Offline
+      message: >-
+        The HA monitoring bridge has been disconnected for 5+ minutes.
+        Sensor data may be stale. Check the farm PC.
+    action: notify.mobile_app_farm_phone
+mode: single
