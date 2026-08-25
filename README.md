@@ -1,5 +1,21 @@
 # Greenery S → Home Assistant MQTT Bridge
 
+> **License & Warranty:** Licensed under the [MIT License](LICENSE) — free
+> to use, modify, and redistribute, provided as-is with **no warranty of
+> any kind, express or implied**. Use at your own risk. This code
+> interacts with live agricultural equipment (dosing pumps, climate
+> control, water systems) — a bug or misconfiguration could affect a real
+> crop. Test thoroughly in your own environment before relying on it, and
+> review each file yourself before running it against production
+> hardware. The author(s) are not liable for crop loss, equipment damage,
+> or any other direct or indirect damages arising from its use.
+>
+> **Tested on:** Home Assistant Green (HA OS), Windows 11 (bridge script
+> host), Android (Companion App + Tailscale). Other platforms and OS
+> versions may work but have not been verified — if you get this running
+> on iOS, HA OS alternatives, Linux, or macOS, contributions/notes on
+> what changed are welcome.
+
 Reads live sensor data from a Freight Farms Greenery S container farm's local
 Farmhand web app (no cloud dependency) and republishes it to MQTT with Home
 Assistant auto-discovery, so sensors appear automatically as a device in HA.
@@ -245,7 +261,53 @@ notification and you're unsure whether the trigger or the delivery is
 at fault.
 
 
-## Not yet built
+## Remote access (off local network)
+
+Local access via the Companion App works automatically once you're on the
+same wifi as Home Assistant. To check the farm from anywhere else (home,
+cell data, traveling), use **Tailscale** — a free outbound-only VPN that
+avoids opening any inbound port on your router. Port forwarding was
+deliberately ruled out for this project due to the security exposure of
+opening a firewall port directly to the internet.
+
+### Setup
+
+1. **Install the Tailscale add-on on Home Assistant** (HA Green/HA OS):
+   Settings → Add-ons → Add-on Store → search "Tailscale" → install the
+   official Home Assistant Community Add-ons version → start it → enable
+   "Start on boot" and "Watchdog."
+2. Open the add-on's **Log** tab, find the login URL it prints on first
+   start, open it in a browser, sign in / create a free Tailscale account,
+   authorize the device.
+3. **Install the Tailscale app** on your phone (App Store / Play Store),
+   sign in with the same account.
+4. Confirm both HA Green and your phone show as connected devices at
+   tailscale.com/admin.
+5. Get HA Green's Tailscale IP from that admin console (starts with
+   `100.x.x.x`).
+6. In the **Home Assistant Companion App** on your phone (this is the
+   app's own name — not to be confused with the HA app in general): if
+   you can't reach your existing server, it will show an "Unable to
+   connect" screen with a **Settings** link → tap it → **Add Server** →
+   enter `http://100.x.x.x:8123` (the Tailscale IP from step 5) → log in.
+
+### Gotchas encountered
+
+- **Battery optimization can silently kill the Tailscale app** in the
+  background on both Android and iOS. Exclude it from any battery-saver
+  restrictions, or the tunnel drops without warning when you're not
+  actively looking at the app.
+- **No cell signal inside the Greenery S container itself** — the metal
+  shipping container blocks cell reception, same as any Faraday-cage-like
+  enclosure. If you're testing remote access while physically standing
+  inside the farm, it will fail even with everything configured
+  correctly — not a bug, just physics. Step outside to test.
+- The mobile app is officially called the **Companion App** in Home
+  Assistant's own settings/menus — worth knowing when searching HA's docs
+  or forums for help, since "the app" and "Companion App" are used
+  interchangeably but only the latter shows up in menu labels.
+
+
 
 - 78°F early-warning temp alert, and Task Mode >6hr alert (queued, see
   Alert Automations section above)
@@ -254,8 +316,4 @@ at fault.
   manual control mode disables Farmhand's automatic safety shutoffs (e.g.
   trough overflow protection), so any HA-side control automation needs to
   replicate those interlocks before going live
-- Remote access without paid hosting (port forwarding + Dynamic DNS,
-  ideally behind a reverse proxy with HTTPS rather than raw HTTP exposed
-  directly) — local network access via the Companion App is confirmed
-  working; off-network access is not yet configured
 - Mobile-optimized dashboard layout — current layout targets desktop width

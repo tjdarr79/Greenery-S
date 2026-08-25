@@ -1,0 +1,18 @@
+[Unit]
+Description=Greenery S -> Home Assistant MQTT Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# EDIT: path to where you deployed farm_bridge.py
+WorkingDirectory=/opt/farm-bridge
+EnvironmentFile=/opt/farm-bridge/farm-bridge.env
+ExecStart=/usr/bin/python3 /opt/farm-bridge/farm_bridge.py
+Restart=always
+RestartSec=10
+# EDIT: run as a non-root user if this box has one set up
+# User=farmbridge
+
+[Install]
+WantedBy=multi-user.target

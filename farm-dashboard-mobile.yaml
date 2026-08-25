@@ -1,0 +1,118 @@
+title: Greenery S Farm (Mobile)
+views:
+  - title: Farm Overview
+    path: farm-mobile
+    icon: mdi:cellphone
+    cards:
+      # -----------------------------------------------------------------
+      # BRIDGE STATUS - check this first: if offline, everything below
+      # is stale/last-known data, not live readings.
+      # -----------------------------------------------------------------
+      - type: entity
+        entity: binary_sensor.greenery_s_farm_farm_bridge_status
+        name: Bridge Status
+        icon: mdi:connection
+
+      # -----------------------------------------------------------------
+      # ENVIRONMENTAL
+      # -----------------------------------------------------------------
+      - type: entities
+        title: Environmental
+        icon: mdi:thermometer
+        show_header_toggle: false
+        entities:
+          - entity: sensor.greenery_s_farm_farm_co2
+            name: CO2
+          - entity: sensor.greenery_s_farm_farm_humidity
+            name: Humidity
+          - entity: sensor.greenery_s_farm_farm_air_temp
+            name: Air Temp
+
+      # -----------------------------------------------------------------
+      # NURSERY
+      # -----------------------------------------------------------------
+      - type: entities
+        title: Nursery
+        icon: mdi:seed
+        show_header_toggle: false
+        entities:
+          - entity: sensor.greenery_s_farm_nursery_ph
+            name: pH
+          - entity: sensor.greenery_s_farm_nursery_ec
+            name: EC
+          - entity: sensor.greenery_s_farm_nursery_water_temp
+            name: Water Temp
+          - entity: sensor.greenery_s_farm_nursery_depth
+            name: Tank Depth
+
+      # -----------------------------------------------------------------
+      # CULTIVATION
+      # -----------------------------------------------------------------
+      - type: entities
+        title: Cultivation
+        icon: mdi:water
+        show_header_toggle: false
+        entities:
+          - entity: sensor.greenery_s_farm_cultivation_ph
+            name: pH
+          - entity: sensor.greenery_s_farm_cultivation_ec
+            name: EC
+          - entity: sensor.greenery_s_farm_cultivation_water_temp
+            name: Water Temp
+          - entity: sensor.greenery_s_farm_cultivation_depth_raw
+            name: Tank Depth (raw - needs calibration)
+          - entity: sensor.greenery_s_farm_left_send_pressure
+            name: Left Send Pressure
+          - entity: sensor.greenery_s_farm_right_send_pressure
+            name: Right Send Pressure
+
+      # -----------------------------------------------------------------
+      # TREND GRAPHS - stacked full-width, one per zone. Side-by-side
+      # columns (used on the desktop dashboard) don't work on a phone
+      # screen - each needs its own row to stay readable.
+      # -----------------------------------------------------------------
+      - type: history-graph
+        title: Environmental Trends (24h)
+        hours_to_show: 24
+        refresh_interval: 60
+        entities:
+          - entity: sensor.greenery_s_farm_farm_co2
+            name: CO2
+          - entity: sensor.greenery_s_farm_farm_humidity
+            name: Humidity
+          - entity: sensor.greenery_s_farm_farm_air_temp
+            name: Air Temp
+
+      - type: history-graph
+        title: Nursery Trends (24h)
+        hours_to_show: 24
+        refresh_interval: 60
+        entities:
+          - entity: sensor.greenery_s_farm_nursery_ph
+            name: pH
+          - entity: sensor.greenery_s_farm_nursery_ec
+            name: EC
+          - entity: sensor.greenery_s_farm_nursery_water_temp
+            name: Water Temp
+
+      - type: history-graph
+        title: Cultivation Trends (24h)
+        hours_to_show: 24
+        refresh_interval: 60
+        entities:
+          - entity: sensor.greenery_s_farm_cultivation_ph
+            name: pH
+          - entity: sensor.greenery_s_farm_cultivation_ec
+            name: EC
+          - entity: sensor.greenery_s_farm_cultivation_water_temp
+            name: Water Temp
+
+      - type: history-graph
+        title: Tank Depth Trends (24h)
+        hours_to_show: 24
+        refresh_interval: 60
+        entities:
+          - entity: sensor.greenery_s_farm_nursery_depth
+            name: Nursery Depth
+          - entity: sensor.greenery_s_farm_cultivation_depth_raw
+            name: Cultivation Depth (raw)
