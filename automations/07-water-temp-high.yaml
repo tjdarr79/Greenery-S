@@ -1,0 +1,48 @@
+alias: Farm Water Temp High
+description: >-
+  Water temperature out of band. Target 65-68°F; above 72°F dissolved
+  oxygen falls toward the range where Pythium zoospore motility peaks.
+
+  MEASUREMENT CAVEAT: the cultivation probe (94E68607D218) is physically
+  located at the nursery table, ~30 ft downstream of the cultivation tank
+  via exposed pipe running adjacent to the LED walls. It reports
+  DELIVERY-POINT temperature, not bulk tank temperature. Thresholds below
+  are set against the delivery-point reading until an independent in-tank
+  probe is installed.
+
+  The nursery loop is held at 69°F by a dedicated chiller, so a nursery
+  trigger here indicates chiller failure rather than gradual drift.
+triggers:
+  - entity_id:
+      - sensor.greenery_s_farm_cultivation_water_temp
+      - sensor.greenery_s_farm_nursery_water_temp
+    above: 72
+    for:
+      minutes: 30
+    id: warn
+    trigger: numeric_state
+  - entity_id:
+      - sensor.greenery_s_farm_cultivation_water_temp
+      - sensor.greenery_s_farm_nursery_water_temp
+    above: 75
+    for:
+      minutes: 10
+    id: critical
+    trigger: numeric_state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: >-
+        {{ '🚨 CRITICAL' if trigger.id == 'critical' else '⚠️' }} Water Temp High
+      notification_id: farm_water_temp_high
+      critical: "{{ trigger.id == 'critical' }}"
+      message: >-
+        {{ trigger.to_state.name }} is at {{ trigger.to_state.state }}°F -
+        target band 65-68°F.
+        {%- if 'Nursery' in trigger.to_state.name %}
+          Nursery is chiller-controlled: check the chiller.
+        {%- else %}
+          Reading is delivery-point, not tank bulk.
+        {%- endif %}
+mode: single

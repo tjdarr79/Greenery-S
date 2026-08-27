@@ -11,10 +11,12 @@ triggers:
       minutes: 1
     trigger: numeric_state
 actions:
-  - data:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
       title: ⚠️ Farm Air Temp High
+      notification_id: farm_air_temp_high
       message: >-
-        Air temp is at {{ trigger.to_state.state }}°F - at or above 80°F
-        threshold. HVAC may not be keeping up - consider turning off lights.
-    action: notify.mobile_app_farm_phone
+        Air temp is at {{ trigger.to_state.state }}°F - at or above the 80°F
+        threshold. HVAC may not be keeping up. Consider turning off lights.
 mode: single

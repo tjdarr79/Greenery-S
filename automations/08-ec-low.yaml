@@ -1,0 +1,24 @@
+alias: Farm EC Low
+description: >-
+  EC below 900 uS/cm. The common dosing failure is a dead or clogged dosing
+  pump letting EC drift DOWN and starving the crop - previously
+  unmonitored, since only a high-EC alarm existed. Target 1200-1600 uS/cm.
+triggers:
+  - entity_id:
+      - sensor.greenery_s_farm_cultivation_ec
+      - sensor.greenery_s_farm_nursery_ec
+    below: 900
+    for:
+      minutes: 15
+    trigger: numeric_state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ EC Low - check dosing pump
+      notification_id: farm_ec_low
+      message: >-
+        {{ trigger.to_state.name }} is at {{ trigger.to_state.state }}
+        µS/cm - below 900. Target 1200-1600. Check the dosing pump,
+        nutrient reservoir level, and dosing line for a clog.
+mode: single

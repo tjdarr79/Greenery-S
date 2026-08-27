@@ -1,0 +1,43 @@
+alias: Farm CO2 High
+description: >-
+  CO2 above 2500 ppm sustained 10 minutes. LIFE SAFETY alert - a stuck
+  injection solenoid in a sealed 40 ft container is the one failure mode
+  that endangers a person rather than a crop. Normal dosed range is
+  1000-1200 ppm; OSHA PEL is 5000 ppm TWA.
+
+  DESIGN NOTE - why this exists despite the README previously excluding it:
+  the original rationale was that manual tank swaps cause expected harmless
+  spikes, and alerting on those trains you to ignore the notification. That
+  reasoning is correct and is respected here by discriminating on DURATION
+  rather than by omitting the alert. A swap spike is transient; a stuck
+  solenoid climbs and stays. A 10-minute sustained window filters the
+  former while still catching the latter with wide margin below the
+  5000 ppm PEL.
+
+  Optional suppression: create an input_boolean named
+  farm_maintenance_mode and flip it on during tank swaps to silence this
+  entirely. The condition below is written to pass when that helper does
+  not exist, so the automation works as-is without creating it.
+triggers:
+  - entity_id: sensor.greenery_s_farm_farm_co2
+    above: 2500
+    for:
+      minutes: 10
+    trigger: numeric_state
+conditions:
+  - condition: template
+    value_template: >-
+      {{ states('input_boolean.farm_maintenance_mode') != 'on' }}
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: 🚨 CO2 HIGH - DO NOT ENTER
+      notification_id: farm_co2_high
+      critical: true
+      message: >-
+        CO2 has held above 2500 ppm for 10+ minutes - now
+        {{ trigger.to_state.state }} ppm. This is not a tank-swap
+        transient. Suspect a stuck injection solenoid. Ventilate before
+        entering the container.
+mode: single

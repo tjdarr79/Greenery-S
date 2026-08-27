@@ -1,19 +1,24 @@
 alias: Farm EC Critical
-description: EC above 3000 - documented signal for algae/debris on sensor or a clog
+description: >-
+  EC above 2000 uS/cm - documented signal for algae/debris on the sensor or
+  a clog. Lowered from 3000 (roughly 2x the lettuce target of 1200-1600),
+  which only tripped after a prolonged dosing fault.
 triggers:
   - entity_id:
       - sensor.greenery_s_farm_cultivation_ec
       - sensor.greenery_s_farm_nursery_ec
-    above: 3000
+    above: 2000
     for:
       minutes: 5
     trigger: numeric_state
 actions:
-  - data:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
       title: ⚠️ EC Critical
+      notification_id: farm_ec_critical
       message: >-
         {{ trigger.to_state.name }} is at {{ trigger.to_state.state }}
-        µS/cm - check for algae/debris on the sensor or a clog
-        restricting flow.
-    action: notify.mobile_app_farm_phone
+        µS/cm - target is 1200-1600. Check for algae/debris on the sensor
+        or a clog restricting flow.
 mode: single

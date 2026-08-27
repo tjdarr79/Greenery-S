@@ -7,10 +7,12 @@ triggers:
       minutes: 5
     trigger: numeric_state
 actions:
-  - data:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
       title: ⚠️ Farm Humidity High
+      notification_id: farm_humidity_high
       message: >-
-        Humidity is at {{ trigger.to_state.state }}% - at or above 80%
+        Humidity is at {{ trigger.to_state.state }}% - at or above the 80%
         threshold.
-    action: notify.mobile_app_farm_phone
 mode: single

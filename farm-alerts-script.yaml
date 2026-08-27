@@ -1,0 +1,139 @@
+# ---------------------------------------------------------------------------
+# FARM ALERTS — the single notification hub for every farm automation.
+#
+# INSTALL (no file editing, no restart, no add-ons):
+#   Settings -> Automations & Scenes -> Scripts tab -> + Add Script
+#   -> three-dot menu -> Edit in YAML -> paste this file -> Save
+#
+# ---------------------------------------------------------------------------
+# WHY THIS EXISTS
+# ---------------------------------------------------------------------------
+# Every automation used to call notify.mobile_app_farm_phone directly. That
+# is a LEGACY NOTIFY SERVICE, whose name is generated from the Companion
+# App's device name at the moment the app registers. Reinstall the app, log
+# out, or rename the phone and the old service is DESTROYED - Home Assistant
+# registers a new one and every automation pointing at the old name breaks
+# silently. That is exactly what happened: all ten automations went mute,
+# including the bridge-offline watchdog.
+#
+# TWO NAMING SYSTEMS EXIST. They are not the same and do not track each
+# other:
+#
+#   notify.mobile_app_sm_s711u   LEGACY SERVICE. Regenerated on every
+#                                re-registration. Fragile. Appears in
+#                                Settings -> Tools -> Actions.
+#
+#   notify.farm_phone            NOTIFY ENTITY. Lives in the entity
+#                                registry and SURVIVES re-registration.
+#                                Appears in states.notify and the
+#                                Entities list.
+#
+# This script is built on the ENTITY, because entity IDs are sticky. That
+# removes the failure mode that caused the original outage.
+# ---------------------------------------------------------------------------
+
+alias: Farm Alerts
+icon: mdi:bell-alert
+description: >-
+  Central notification hub. Every farm automation calls this instead of a
+  phone directly. Logs to the Home Assistant UI first, then pushes to the
+  phone, so an alert can never vanish entirely.
+mode: parallel
+max: 10
+
+fields:
+  title:
+    name: Title
+    description: Short headline shown on the phone.
+    required: true
+    example: Water Temp High
+    selector:
+      text:
+  message:
+    name: Message
+    description: Body text of the alert.
+    required: true
+    example: Cultivation is at 76F - target band is 65-68F.
+    selector:
+      text:
+        multiline: true
+  critical:
+    name: Critical
+    description: >-
+      Also send a second alert that bypasses silent mode and Do Not Disturb.
+      Use only for alerts worth waking someone up for.
+    required: false
+    default: false
+    selector:
+      boolean:
+  notification_id:
+    name: Notification ID
+    description: >-
+      Reusing an ID replaces the previous notification instead of stacking a
+      new one. Leave blank for a generic farm alert.
+    required: false
+    example: farm_water_temp_high
+    selector:
+      text:
+
+# The sequence below is ordered MOST RELIABLE FIRST, on purpose.
+#
+# `continue_on_error` does NOT rescue an unknown notify service - the HA docs
+# state it "will not suppress/ignore misconfiguration or errors that Home
+# Assistant does not handle." A bad service name ABORTS the script at that
+# point. So every step is placed after the steps that must not be lost.
+sequence:
+
+  # --- STEP 1: the audit trail. Cannot fail. --------------------------------
+  # Visible under Settings -> Notifications. If a phone alert never arrives,
+  # check here to distinguish "the automation never fired" from "the phone
+  # never got it."
+  - action: persistent_notification.create
+    data:
+      notification_id: "{{ notification_id | default('farm_alert', true) }}"
+      title: "{{ title }}"
+      message: >-
+        {{ message }} (logged {{ now().strftime('%Y-%m-%d %H:%M') }})
+
+  # --- STEP 2: the push, via the DURABLE entity. ----------------------------
+  # This is the one line to change if the phone is ever replaced.
+  - action: notify.send_message
+    continue_on_error: true
+    target:
+      entity_id: notify.farm_phone          # <-- YOUR PHONE (durable entity)
+    data:
+      title: "{{ title }}"
+      message: "{{ message }}"
+
+  # --- STEP 3: critical override. Best-effort, deliberately LAST. -----------
+  # notify.send_message accepts ONLY target/message/title - no `data:` field
+  # (HA docs: "If an integration still provides only a legacy notify action,
+  # use that integration's action instead"). So bypassing Do Not Disturb
+  # requires a legacy mobile_app service. That name is the fragile one, so
+  # this call is last: if it is stale and aborts the script, steps 1 and 2
+  # have ALREADY delivered.
+  #
+  # ANDROID payload - NOT the iOS one. iOS uses sound/critical/volume;
+  # Android needs ttl 0 + priority high to override DND, and
+  # channel: alarm_stream to route audio through the alarm stream rather
+  # than the notification stream.
+  #
+  # CONFIRM THE SERVICE NAME before relying on this: Settings -> Tools ->
+  # Actions, type "mobile_app". Only a legacy SERVICE works here - the
+  # notify ENTITY (notify.farm_phone) cannot carry this payload.
+  #
+  # Critical alerts arrive twice - once normally via step 2, once loud here.
+  # For a stuck CO2 solenoid that redundancy is intentional.
+  - if:
+      - condition: template
+        value_template: "{{ critical | default(false) }}"
+    then:
+      - action: notify.mobile_app_farm_phone   # <-- CONFIRM THIS NAME
+        continue_on_error: true
+        data:
+          title: "{{ title }}"
+          message: "{{ message }}"
+          data:
+            ttl: 0
+            priority: high
+            channel: alarm_stream

@@ -1,0 +1,34 @@
+alias: Farm Tank Depth Low
+description: >-
+  Nursery tank depth below 20% - running a pump dry destroys it.
+
+  SCOPE NOTE: cultivation depth (analog_1) is deliberately NOT included.
+  farm_bridge.py documents it as uncalibrated - the raw value does not
+  match Farmhand's displayed %, so any threshold set against it would be
+  arbitrary. Recalibrate that sensor, then add it to the trigger list
+  below.
+
+  The 20% figure is a starting point and should be validated against an
+  actual observed fill/drain cycle before this is trusted.
+triggers:
+  - entity_id: sensor.greenery_s_farm_nursery_depth
+    below: 20
+    for:
+      minutes: 10
+    trigger: numeric_state
+  # - entity_id: sensor.greenery_s_farm_cultivation_depth_raw
+  #   below: <TBD - recalibrate analog_1 first>
+  #   for:
+  #     minutes: 10
+  #   trigger: numeric_state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ Tank Depth Low
+      notification_id: farm_tank_depth_low
+      message: >-
+        {{ trigger.to_state.name }} is at {{ trigger.to_state.state }}% -
+        below 20%. Check the autofill valve and well pressure tank. Pump
+        damage risk if it runs dry.
+mode: single

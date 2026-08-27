@@ -9,10 +9,12 @@ triggers:
       minutes: 5
     trigger: numeric_state
 actions:
-  - data:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
       title: ⚠️ CO2 Below Minimum
+      notification_id: farm_co2_low
       message: >-
         CO2 is at {{ trigger.to_state.state }} ppm - below 500 ppm.
-        Check CO2 controller/injection.
-    action: notify.mobile_app_farm_phone
+        Check the CO2 controller and injection system. Tank is likely empty.
 mode: single

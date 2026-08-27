@@ -178,29 +178,160 @@ That's the actual failure mode this deployment exists to survive.
   pip install ...`, `py farm_bridge.py`) — often correctly registered even
   when `pip`/`python` aren't on PATH.
 
+## Home Assistant navigation (2026.2.0 and later)
+
+**Developer Tools was removed from the sidebar in HA 2026.2.0.** It now
+lives under **Settings → Tools** — scroll or swipe down the Settings list
+to find it. Older guides (including earlier revisions of this README) that
+say "sidebar → Developer Tools" or "enable Advanced Mode to reveal
+Developer Tools" are out of date and will send you looking for a menu
+entry that no longer exists.
+
+Direct URLs, which are faster than navigating:
+
+| Tab | URL | Used for |
+|---|---|---|
+| YAML | `/config/tools/yaml` | Validate config, reload, restart |
+| Actions | `/config/tools/action` | Fire a service call by hand — notify tests |
+| States | `/config/tools/state` | Inspect/override entity state |
+| Template | `/config/tools/template` | Render Jinja before pasting into an automation |
+
+Fastest route of all: press **`c`** anywhere in the UI to open the command
+palette and jump straight to a tab.
+
 ## Alert automations
 
-Six phone-notification automations live in `automations/`, one file each,
+Ten phone-notification automations live in `automations/`, one file each,
 covering the thresholds actually needed for daily operation. They notify
 via Home Assistant's Companion App, not email/SMS.
+
+**All of them route through `notify.farm_alerts`, a notify group defined in
+`notify-group.yaml`. That group must exist before any automation is
+deployed — see "Notification routing" below.**
 
 | File | Fires when | Window | Why |
 |---|---|---|---|
 | `01-bridge-offline.yaml` | Bridge disconnects | 5 min | If this fires, every other alert below is unreliable until it clears |
-| `02-ph-out-of-range.yaml` | pH <5.0 or >7.75, either zone | 5 min | 7.75 ceiling accounts for normal post-fill readings (~7.5) that would false-trigger at a stricter 7.0 |
-| `03-ec-critical.yaml` | EC >3000, either zone | 5 min | Documented signal for algae/debris on the sensor or a clog |
+| `02-ph-out-of-range.yaml` | pH <5.4 or >6.4, either zone | 5 min | Working target for lettuce/brassicas is 5.5–6.2. Above ~6.5 iron and manganese availability collapses |
+| `03-ec-critical.yaml` | EC >2000, either zone | 5 min | Algae/debris on the sensor or a clog. ~1.3× the 1200–1600 target band |
 | `04-co2-below-minimum.yaml` | CO2 <500 ppm | 5 min | Tank-empty signal. 5 min gives ~55 min of lead time before starvation risk, based on observed ~1hr decline from 500→300 ppm |
 | `05-air-temp-high.yaml` | Air temp ≥80°F | **1 min** | Deliberately short — 80°F means HVAC has already lost the fight and lights need to come off; this is an emergency alert, not a routine one |
 | `06-humidity-high.yaml` | Humidity ≥80% | 5 min | Routine watch alert |
+| `07-water-temp-high.yaml` | Water temp >72°F (warn) / >75°F (critical) | 30 min / 10 min | Target band 65–68°F. See the measurement caveat below |
+| `08-ec-low.yaml` | EC <900, either zone | 15 min | A dead or clogged dosing pump lets EC drift *down* and starves the crop — the failure a high-only alarm never catches |
+| `09-co2-high.yaml` | CO2 >2500 ppm | **10 min** | Stuck injection solenoid. Long window deliberately filters tank-swap transients — see below |
+| `10-tank-depth-low.yaml` | Nursery depth <20% | 10 min | Running a pump dry destroys it |
 
-**Not included, by design:** no alert on CO2 spiking *high*. Manual tank
-swaps cause expected, harmless spikes — alerting on those would just
-train you to ignore the notification. Only the low-CO2/empty-tank
-condition matters operationally.
+### Water temp measurement caveat (important)
+
+`07-water-temp-high.yaml` thresholds are set against a **delivery-point**
+reading, not bulk tank temperature.
+
+The cultivation dosing sensors (`94E68607D218`) are physically located at
+the nursery table, roughly 30 ft downstream of the cultivation tank, fed by
+exposed pipe running adjacent to the LED walls. Water picks up heat in
+transit. What the sensor reports is the temperature of water *arriving at
+the nursery table*, which is what the plants and the dosing system see, but
+it is higher than the tank itself by an unmeasured delta.
+
+The nursery loop is separately chiller-controlled at 69°F, so a nursery
+trigger on this automation indicates **chiller failure**, not gradual drift.
+
+Until an independent in-tank probe is installed, do not read this sensor as
+tank temperature in any diagnosis.
+
+### Why there IS now a high-CO2 alert
+
+Earlier revisions of this README excluded one on the grounds that manual
+tank swaps cause expected harmless spikes, and alerting on those trains you
+to ignore the notification. **That reasoning is correct and is preserved
+here** — it is handled by discriminating on *duration* rather than by
+omitting the alert entirely.
+
+A swap spike is transient. A stuck solenoid climbs and stays. The 10-minute
+sustained window filters the former while still catching the latter with
+wide margin below the 5000 ppm OSHA PEL. In a sealed 40 ft container this is
+the only failure mode that endangers a person rather than a crop, which is
+why it warrants an alert at all.
+
+Optional hard suppression: create an `input_boolean` named
+`farm_maintenance_mode` and flip it on during tank swaps. The automation's
+condition is written to pass when that helper does not exist, so it works
+as-is without creating one.
 
 **Queued for later, not yet built:** a lower-urgency alert at 78°F (giving
 earlier warning before the 80°F emergency point), and a "Task Mode active
->6 hours" alert.
+>6 hours" alert. Cultivation tank depth is also not yet alarmed —
+`analog_1` is uncalibrated (see the note in `farm_bridge.py`), so any
+threshold against it would be arbitrary. The trigger is committed
+commented-out in `10-tank-depth-low.yaml`, ready once that sensor is
+recalibrated.
+
+## Notification routing
+
+### The problem this solves
+
+Every automation used to call `notify.mobile_app_farm_phone` directly.
+
+That service name is **auto-generated** by the Companion App from the
+phone's device name at the moment it registers. It is destroyed whenever
+the app is reinstalled, the phone is renamed, or the user logs out — Home
+Assistant then registers a *new* name, and every automation pointing at
+the old one breaks.
+
+That is exactly what happened. The phone re-registered under its raw
+Android model number (`mobile_app_sm_s711u`) instead of the friendly name
+it had before. All automations went mute — **including
+`01-bridge-offline`, the watchdog for the whole pipeline.** Home Assistant
+raised a Repair notice for only `05-air-temp-high`, because that was the
+one automation that happened to fire. Nothing in this project had ever
+verified the notification path was alive, so the failure stayed invisible.
+
+### The fix: one script, one place to change
+
+All ten automations call **`script.farm_alerts`** instead of a phone. That
+script is the only thing in the system that knows your phone's name.
+
+```
+automations (x10)  ──►  script.farm_alerts  ──►  your phone
+                                             └─► HA persistent notification
+```
+
+When your phone changes, you edit one line in one script. Nothing else.
+
+The script also writes a **persistent notification** in the Home Assistant
+UI on every alert. That runs even when the push fails, so a dead phone
+leaves a visible trace instead of silence.
+
+### Installing the alert script (do this FIRST)
+
+No file editing. No restart. No add-ons.
+
+1. **Settings → Automations & Scenes → Scripts** tab
+2. **+ Add Script** → three-dot menu (top right) → **Edit in YAML**
+3. Delete whatever is in the box, paste the entire contents of
+   `farm-alerts-script.yaml`
+4. **Save**
+
+### Test it before going any further
+
+Still on the Scripts page: find **Farm Alerts** → three-dot menu → **Run**.
+
+A dialog appears with Title and Message boxes (that is what the `fields:`
+block in the script is for). Type anything and run it.
+
+- **Phone buzzes** → the whole chain works. Continue to the automations.
+- **Nothing** → stop here. Do not install the automations; they will all
+  fail the same way. Fix this first:
+  - Settings → Tools → Actions (`/config/tools/action`), type
+    `notify.mobile_app` and see what actually autocompletes. If it differs
+    from `mobile_app_sm_s711u`, put the real one in the script — it
+    appears in **two** places, both marked `# <-- YOUR PHONE`.
+  - Settings → Devices & Services → **Mobile App** should list your phone.
+    If it lists a stale device too, delete the stale one.
+
+**This test is the single most important step in this document.** It is
+the step that was never done, which is why the outage went unnoticed.
 
 ### Installing the automations
 
@@ -212,53 +343,89 @@ throws `Message malformed: extra keys not allowed @ data['0']` if you try)
 2. Skip the visual builder — click the three-dot menu → **Edit in YAML**
 3. Paste the full contents of one file (e.g. `01-bridge-offline.yaml`)
 4. Save
-5. Repeat for the remaining five files
+5. Repeat for the remaining nine files
 
-**Before installing any of them:** replace `notify.mobile_app_farm_phone`
-in every file with your own phone's actual notify service name — this is
-specific to how your device registered in the Companion App, not a fixed
-value. Find yours: enable Advanced Mode (click your profile icon,
-bottom-left → scroll down → toggle **Advanced Mode** on) to reveal
-Developer Tools, then **Developer Tools → Actions**, search "notify" —
-your device's service name appears in the results.
+Nothing in these files needs editing for your setup. They contain no phone
+name — that lives only in the script.
 
-### Testing before you trust them
+### When your phone changes (the thing that broke this before)
 
-Two separate things can be broken independently — test them in this
-order so you know which one you're actually debugging:
+1. Settings → Tools → Actions → type `notify.mobile_app` → note the new name
+2. Settings → Automations & Scenes → Scripts → **Farm Alerts** → Edit in YAML
+3. Replace the name in both `# <-- YOUR PHONE` lines
+4. Save, then Run the script to confirm the phone buzzes
 
-**1. Confirm notification delivery works at all**, independent of any
-automation logic:
-- Developer Tools → Actions → search "notify" → select your device's
-  service
-- In the data field, enter:
-  ```yaml
-  title: Test Alert
-  message: This is a manual test
-  ```
-- Click **Perform Action**. Phone should buzz within seconds.
+Four steps, one file. Previously this meant editing ten automations, and
+forgetting one meant a silent gap.
 
-If this fails, the automations aren't the problem — the notify service
-name is wrong, or the Companion App isn't fully registered
-(Settings → Devices & Services → Mobile App should list your phone).
+### Adding a second phone
 
-**2. Confirm each trigger actually fires**, once delivery is proven:
-`numeric_state` triggers only fire on a *crossing* — if a sensor is
-already above/below the threshold when you save the automation, it will
-NOT fire retroactively just because the condition is already true. To
-test for real, temporarily set the threshold to a value just past the
-sensor's *current* reading, save, wait out the `for:` window, confirm
-the phone buzzes, then set the threshold back to its real value and save
-again.
+One notification path is a single point of failure for a container holding
+perishable inventory. To notify two devices, add a second action beside
+each existing one in the script:
 
-Example: if cultivation is reading 71°F and you want to test
+```yaml
+      - action: notify.mobile_app_sm_s711u
+        continue_on_error: true
+        data:
+          title: "{{ title }}"
+          message: "{{ message }}"
+      - action: notify.mobile_app_second_phone
+        continue_on_error: true
+        data:
+          title: "{{ title }}"
+          message: "{{ message }}"
+```
+
+`continue_on_error: true` on each means one dead phone cannot stop the
+other from being notified.
+
+### Alternative: a notify group in configuration.yaml
+
+If you prefer YAML config over a UI script, the same decoupling can be
+done with a notify group:
+
+```yaml
+notify:
+  - platform: group
+    name: farm_alerts
+    services:
+      - action: mobile_app_sm_s711u
+```
+
+Then change `script.farm_alerts` to `notify.farm_alerts` in the
+automations. This requires editing `/config/configuration.yaml` (needs the
+File Editor, Studio Code Server, or Samba add-on on HA OS) and a **full
+restart** — a config-defined notify group is not hot-reloadable. It also
+does not give you the persistent-notification fallback unless you add that
+step back into every automation.
+
+The script route is the documented default because it needs none of that.
+
+### Testing the automations themselves
+
+Once the script is proven, two more things can be broken independently:
+
+**Does the automation's action block reach the phone?** Settings →
+Automations & Scenes → select the automation → ⋮ → **Run actions**. This
+fires the actions immediately, ignoring the trigger. Note that
+`trigger.to_state` templates render empty on a manual run — that is
+expected, not a fault.
+
+**Does the trigger actually fire?** `numeric_state` triggers only fire on a
+*crossing*. If a sensor is already past the threshold when you save the
+automation, it will NOT fire retroactively just because the condition is
+already true. To test for real, temporarily set the threshold just past
+the sensor's *current* reading, save, wait out the `for:` window, confirm
+the phone buzzes, then set it back and save again.
+
+Example: if air temp is reading 71°F and you want to test
 `05-air-temp-high.yaml`, temporarily change `above: 80` to `above: 71.5`
 — not `above: 60`, which is already true and won't trigger anything.
 
-Check Settings → Automations → open the automation → **Traces** tab to
-confirm whether it fired at all, if a test doesn't produce a
-notification and you're unsure whether the trigger or the delivery is
-at fault.
+If a test produces no notification and you're unsure whether the trigger or
+the delivery is at fault, check Settings → Automations → open the
+automation → **Traces**.
 
 
 ## Remote access (off local network)
