@@ -1,0 +1,32 @@
+alias: Farm Equipment Not Responding
+description: >-
+  HYPOTHESIS-BASED - validate before trusting.
+
+  The output board publishes both "state" (believed actual) and "shadow"
+  (believed commanded). If that reading is correct, a sustained mismatch means
+  a relay was told to switch and did not: a dead relay, a tripped breaker, or a
+  seized pump.
+
+  VALIDATE FIRST: watch binary_sensor.greenery_s_farm_relay_state_mismatch for a
+  few days. If it flickers during normal switching, raise the "for:" duration.
+  If it sits on constantly, the shadow/state hypothesis is wrong - disable this
+  automation and tell Claude.
+
+  Output 24 is excluded in farm_bridge.py (absent from shadow entirely).
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_relay_state_mismatch
+    to: "on"
+    for:
+      minutes: 15
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ Equipment Not Responding
+      notification_id: farm_relay_mismatch
+      message: >-
+        A relay has been commanded to one state and reading another for 15+
+        minutes. Check Settings > Devices for which output disagrees, then check
+        that circuit's breaker and the equipment on it.
+mode: single

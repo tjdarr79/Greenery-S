@@ -199,9 +199,14 @@ Direct URLs, which are faster than navigating:
 Fastest route of all: press **`c`** anywhere in the UI to open the command
 palette and jump straight to a tab.
 
+**Finding the farm's entities:** they live under
+**Settings → Devices & Services → MQTT → Greenery S Farm**. The device belongs
+to the MQTT integration, so it is *inside* the MQTT card — not listed at the top
+level of Devices & Services. Easy to miss when you are looking for it by name.
+
 ## Alert automations
 
-Ten phone-notification automations live in `automations/`, one file each,
+Thirteen phone-notification automations live in `automations/`, one file each,
 covering the thresholds actually needed for daily operation. They notify
 via Home Assistant's Companion App, not email/SMS.
 
@@ -221,6 +226,9 @@ deployed — see "Notification routing" below.**
 | `08-ec-low.yaml` | EC <900, either zone | 15 min | A dead or clogged dosing pump lets EC drift *down* and starves the crop — the failure a high-only alarm never catches |
 | `09-co2-high.yaml` | CO2 >2500 ppm | **10 min** | Stuck injection solenoid. Long window deliberately filters tank-swap transients — see below |
 | `10-tank-depth-low.yaml` | Nursery depth <20% | 10 min | Running a pump dry destroys it |
+| `11-recirc-pump-stopped.yaml` | Either recirc pump off **while in auto** | 5 min | Dosing stops AND the hydro sensors go stale — pH/EC keep reporting plausible numbers for standing water. Gated on Task Mode so cleanouts stay silent |
+| `12-task-mode-left-on.yaml` | Task Mode active | 6 hours | Recipe automation suspended. The alert this README had queued and could not build until the relay board was mapped |
+| `13-equipment-not-responding.yaml` | Relay state ≠ shadow | 15 min | **Validate before enabling** — see the hypothesis note above |
 
 ### Water temp measurement caveat (important)
 
@@ -266,6 +274,80 @@ earlier warning before the 80°F emergency point), and a "Task Mode active
 threshold against it would be arbitrary. The trigger is committed
 commented-out in `10-tank-depth-low.yaml`, ready once that sensor is
 recalibrated.
+
+## Output board mapping (32-channel relay)
+
+Device `244CAB0FC00C` is the farm's actuator layer. `farm_bridge.py` publishes
+all 32 channels as **binary sensors, read-only**, plus three derived signals.
+
+**Nothing writes to this board.** These relays are driven by farmhand's recipe
+engine. Writing to them makes Home Assistant and the Hub disagree about reality,
+and the engine reverts on its next cycle. Any auxiliary control belongs on
+separate relay hardware.
+
+### Why this matters
+
+Before this, the farm's *state* was measured (pH, EC, temp, CO2, depth) but its
+equipment *behavior* was not. That gap hid a specific failure: a recirc pump
+stopping does not just stop a pump — it leaves the hydro sensors reading
+standing water, so pH and EC keep reporting plausible numbers that no longer
+describe the tank. Every downstream alarm quietly becomes unreliable while
+looking fine.
+
+### Channel map
+
+From Freight Farms' *How to Read the Greenery S Electrical Schematic* (Mar 2025).
+The CB column is why it is worth having: a tripped breaker maps straight to the
+entities that went dark.
+
+| Ch | Equipment | CB | Ch | Equipment | CB |
+|---|---|---|---|---|---|
+| 1 | Cultivation Recirc Pump | CB5 | 17 | Nursery LED Top Red | CB4 |
+| 2 | Left Send Pump | CB5 | 18 | Nursery LED Top Blue | CB4 |
+| 3 | Right Send Pump | CB5 | 19 | Nursery LED Bottom Red | CB4 |
+| 4 | Cultivation Autofill | CB5 | 20 | Nursery LED Bottom Blue | CB4 |
+| 5 | Nursery Autofill | CB5 | 21 | Nursery Work LEDs | CB4 |
+| 6 | Nursery Top Trough Pump | CB4 | 22 | Cultivation Work LEDs | CB5 |
+| 7 | Nursery Bottom Trough Pump | CB4 | 23 | **Spare — chiller + extra fans** | CB2 |
+| 8 | **Nursery Recirc + Chiller Pump** | CB4 | 24 | *unmapped* | — |
+| 9 | CO2 Regulator | CB4 | 25–27 | Cultivation LED Left Red | CB6/7 |
+| 10 | Duct Fans (L+R) | CB5 | 28 | Cultivation LED Left Blue | CB8 |
+| 11 | Overhead Fan | CB4 | 29–31 | Cultivation LED Right Red | CB9/10 |
+| 12 | Exhaust Fan | CB4 | 32 | Cultivation LED Right Blue | CB8 |
+| 13 | HVAC Blower | CB11 | 16 | *unmapped* | — |
+| 14 | HVAC Cooling | CB11 | | | |
+| 15 | HVAC Heater | CB11 | | | |
+
+### Two site-specific wiring notes
+
+**Channel 8 also carries the chiller pump.** It shares power with the nursery
+recirc pump so Task Mode drops both together during a tank cleanout — this
+prevents running the chiller pump against a drained tank. Deliberate. The entity
+name says so; don't "tidy" it.
+
+**Channel 23 is held in manual permanently.** It carries the chiller unit and
+extra fans. Because it is never `auto`, it is listed in `TASK_MODE_EXCLUDE` in
+`farm_bridge.py` — without that, the Task Mode sensor reads true forever and
+means nothing.
+
+There is deliberately **no** "chiller running dry" sensor. The chiller is
+switched off at the unit before the nursery valve is opened, and that switch is
+invisible here — ch23 stays energised regardless. Such a sensor would fire
+through every cleanout and train you to ignore it. The meaningful alarm is
+`11-recirc-pump-stopped`, gated on Task Mode being off.
+
+### Three derived signals
+
+| Entity | Meaning |
+|---|---|
+| **Task Mode Active** | Any channel off `auto`, excluding ch23. Recipe control is suspended. |
+| **Output Board Connected** | The board's own link state. |
+| **Relay State Mismatch** | `state` ≠ `shadow`. **Hypothesis** — `shadow` appears to hold commanded state. Validate over a few days before trusting. `output_24` is absent from `shadow` and excluded. |
+
+### Reading the board yourself
+
+`dump-relay.py` (stdlib only) prints one SSE frame's worth of channel states.
+Useful for confirming a mapping or working out what the unmapped channels do.
 
 ## Notification routing
 
@@ -343,7 +425,7 @@ throws `Message malformed: extra keys not allowed @ data['0']` if you try)
 2. Skip the visual builder — click the three-dot menu → **Edit in YAML**
 3. Paste the full contents of one file (e.g. `01-bridge-offline.yaml`)
 4. Save
-5. Repeat for the remaining nine files
+5. Repeat for the remaining twelve files
 
 Nothing in these files needs editing for your setup. They contain no phone
 name — that lives only in the script.

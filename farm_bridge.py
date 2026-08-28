@@ -112,6 +112,156 @@ SENSORS = [
               unit="%"),
 ]
 
+# --- BEGIN relay output board mapping (added by apply_relay_patch) ---
+# Channel -> (friendly name, HA device_class, circuit breaker)
+# Source: Freight Farms "How to Read the Greenery S Electrical Schematic", Mar 2025.
+#
+# The CB is kept here for reference but deliberately NOT put in the entity name:
+# HA derives entity_id from the name, and "(CB5)" would end up in every id you
+# ever type into an automation.
+OUTPUT_MAP = {
+    1:  ("Cultivation Recirc Pump",        "running", "CB5"),
+    2:  ("Left Send Pump",                 "running", "CB5"),
+    3:  ("Right Send Pump",                "running", "CB5"),
+    4:  ("Cultivation Autofill",           "opening", "CB5"),
+    5:  ("Nursery Autofill",               "opening", "CB5"),
+    6:  ("Nursery Top Trough Pump",        "running", "CB4"),
+    7:  ("Nursery Bottom Trough Pump",     "running", "CB4"),
+    # Ch8 also carries the CHILLER PUMP - same power as the nursery recirc pump
+    # so Task Mode drops both together during a tank cleanout. Owner-designed
+    # interlock; the name reflects it on purpose.
+    8:  ("Nursery Recirc and Chiller Pump", "running", "CB4"),
+    9:  ("CO2 Regulator",                  "opening", "CB4"),
+    10: ("Duct Fans",                      "running", "CB5"),
+    11: ("Overhead Fan",                   "running", "CB4"),
+    12: ("Exhaust Fan",                    "running", "CB4"),
+    13: ("HVAC Blower",                    "running", "CB11"),
+    14: ("HVAC Cooling",                   "running", "CB11"),
+    15: ("HVAC Heater",                    "running", "CB11"),
+    16: ("Output 16 Unmapped",             None,      None),
+    17: ("Nursery LED Top Red",            "light",   "CB4"),
+    18: ("Nursery LED Top Blue",           "light",   "CB4"),
+    19: ("Nursery LED Bottom Red",         "light",   "CB4"),
+    20: ("Nursery LED Bottom Blue",        "light",   "CB4"),
+    21: ("Nursery Work LEDs",              "light",   "CB4"),
+    22: ("Cultivation Work LEDs",          "light",   "CB5"),
+    # Ch23 is held in MANUAL by the owner: chiller unit + extra fans. It is
+    # never "auto", which is why it is excluded from Task Mode detection.
+    23: ("Spare Chiller and Extra Fans",   "power",   "CB2"),
+    24: ("Output 24 Unmapped",             None,      None),
+    25: ("Cultivation LED Left Red A",     "light",   "CB6"),
+    26: ("Cultivation LED Left Red B",     "light",   "CB7"),
+    27: ("Cultivation LED Left Red C",     "light",   "CB7"),
+    28: ("Cultivation LED Left Blue",      "light",   "CB8"),
+    29: ("Cultivation LED Right Red A",    "light",   "CB9"),
+    30: ("Cultivation LED Right Red B",    "light",   "CB10"),
+    31: ("Cultivation LED Right Red C",    "light",   "CB10"),
+    32: ("Cultivation LED Right Blue",     "light",   "CB8"),
+}
+
+OUTPUT_DEVICE_ID = "244CAB0FC00C"
+
+# Channels the owner intentionally holds in manual. Without this exclusion the
+# Task Mode sensor reads true forever and means nothing.
+TASK_MODE_EXCLUDE = {23}
+
+# NOTE on the chiller: ch23 carries the chiller UNIT, ch8 its PUMP. Do NOT derive
+# a "running dry" sensor from ch23 AND NOT ch8 - the owner kills the chiller at
+# its own switch before opening the nursery valve, and that switch is invisible
+# here (ch23 stays energised). Such a sensor would fire through every cleanout.
+# The meaningful alarm is "recirc pump stopped while in AUTO", done in HA.
+
+
+@dataclass
+class BinarySensorDef:
+    unique_id: str
+    name: str
+    device_class: str = None
+    entity_category: str = None
+
+
+BINARY_SENSORS = [
+    BinarySensorDef(
+        unique_id=f"output_{_ch}",
+        name=_name,
+        device_class=_dc,
+        entity_category=None if _cb else "diagnostic",
+    )
+    for _ch, (_name, _dc, _cb) in sorted(OUTPUT_MAP.items())
+] + [
+    BinarySensorDef("task_mode_active", "Task Mode Active", device_class="problem"),
+    BinarySensorDef("output_board_connected", "Output Board Connected",
+                    device_class="connectivity", entity_category="diagnostic"),
+    # HYPOTHESIS - validate before trusting. "shadow" appears to hold commanded
+    # state while "state" holds actual; a mismatch would mean a relay was told
+    # to switch and did not. output_24 is absent from shadow and is excluded.
+    BinarySensorDef("relay_state_mismatch", "Relay State Mismatch",
+                    device_class="problem", entity_category="diagnostic"),
+]
+
+
+def _output_board(payload: dict) -> dict:
+    try:
+        return payload["state"][OUTPUT_DEVICE_ID]
+    except (KeyError, TypeError):
+        return {}
+
+
+def publish_binary_states(client, payload: dict):
+    board = _output_board(payload)
+    if not board:
+        log.warning("Output board %s missing from frame", OUTPUT_DEVICE_ID)
+        return
+
+    outputs = board.get("state") or {}
+    modes = board.get("mode") or {}
+    shadow = board.get("shadow") or {}
+
+    def send(uid, on):
+        client.publish(f"{MQTT_BASE_TOPIC}/{uid}/state",
+                       "ON" if on else "OFF", retain=True)
+
+    for ch in OUTPUT_MAP:
+        key = f"output_{ch}"
+        if key in outputs:
+            send(key, bool(outputs[key]))
+
+    excluded = {f"output_{c}" for c in TASK_MODE_EXCLUDE}
+    send("task_mode_active",
+         any(v != "auto" for k, v in modes.items() if k not in excluded))
+
+    send("output_board_connected", bool(board.get("connected")))
+
+    send("relay_state_mismatch",
+         any(outputs[k] != shadow[k] for k in outputs if k in shadow))
+
+
+def publish_binary_discovery(client, availability_topic: str):
+    for bsensor in BINARY_SENSORS:
+        config_topic = f"{DISCOVERY_PREFIX}/binary_sensor/{bsensor.unique_id}/config"
+        payload = {
+            "name": bsensor.name,
+            "unique_id": f"greenery_s_{bsensor.unique_id}",
+            "state_topic": f"{MQTT_BASE_TOPIC}/{bsensor.unique_id}/state",
+            "availability_topic": availability_topic,
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device": {
+                "identifiers": ["greenery_s_farm"],
+                "name": "Greenery S Farm",
+                "manufacturer": "Freight Farms",
+                "model": "Greenery S",
+            },
+        }
+        if bsensor.device_class:
+            payload["device_class"] = bsensor.device_class
+        if bsensor.entity_category:
+            payload["entity_category"] = bsensor.entity_category
+        client.publish(config_topic, json.dumps(payload), qos=1, retain=True)
+        log.info(f"Published discovery config for {bsensor.name}")
+# --- END relay output board mapping ---
+
+
 # ---------------------------------------------------------------------------
 # MQTT setup
 # ---------------------------------------------------------------------------
@@ -214,6 +364,8 @@ def publish_discovery(client: mqtt.Client):
         client.publish(config_topic, json.dumps(payload), qos=1, retain=True)
         log.info(f"Published discovery config for {sensor.name}")
 
+    publish_binary_discovery(client, availability_topic)
+
 
 def extract_value(payload: dict, sensor: SensorDef):
     try:
@@ -234,6 +386,8 @@ def publish_states(client: mqtt.Client, payload: dict):
             continue
         state_topic = f"{MQTT_BASE_TOPIC}/{sensor.unique_id}/state"
         client.publish(state_topic, round(value, 2) if isinstance(value, float) else value, retain=True)
+
+    publish_binary_states(client, payload)
 
 # ---------------------------------------------------------------------------
 # SSE stream reader

@@ -1,0 +1,57 @@
+alias: Farm Recirc Pump Stopped
+description: >-
+  A recirculation pump stopped while the farm is in AUTO - i.e. nobody put it
+  in Task Mode, so this is unplanned. Dead pump, tripped breaker, or seized
+  impeller.
+
+  Per the Greenery S manual the recirc pumps run at ALL times: they push water
+  over the pH and EC/temperature sensors and deliver dosing solution. When one
+  stops in auto, three things break at once:
+
+    1. Dosing stops - EC and pH drift with nothing correcting them.
+    2. The hydro sensors go stale - readings look plausible but are measuring
+       standing water, so the pH/EC alarms will NOT catch it.
+    3. On the nursery side (output 8) the chiller pump is on the same power,
+       so the chiller loses flow as well.
+
+  That second point is why this alarm matters more than it looks: a stopped
+  recirc pump makes the rest of the alerting quietly unreliable.
+
+  DELIBERATELY GATED on Task Mode being off. During a tank cleanout the owner
+  turns the chiller off at the unit and drops output 8 on purpose. Alarming
+  through every cleanout would train them to ignore this.
+
+  VERIFY THE ENTITY IDs after restarting the bridge - Home Assistant derives
+  them from the entity name and these are predicted, not confirmed.
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_cultivation_recirc_pump
+    to: "off"
+    for:
+      minutes: 5
+    trigger: state
+  - entity_id: binary_sensor.greenery_s_farm_nursery_recirc_and_chiller_pump
+    to: "off"
+    for:
+      minutes: 5
+    trigger: state
+conditions:
+  - condition: state
+    entity_id: binary_sensor.greenery_s_farm_task_mode_active
+    state: "off"
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: 🚨 Recirc Pump Stopped
+      notification_id: farm_recirc_pump_stopped
+      critical: true
+      message: >-
+        {{ trigger.to_state.name }} has been OFF for 5+ minutes and the farm is
+        NOT in Task Mode. Dosing has stopped and the hydro sensors for that zone
+        are now reading standing water - treat pH and EC as unreliable until
+        this clears.
+        {%- if 'Nursery' in trigger.to_state.name %}
+          The chiller pump is on this same circuit, so the chiller has no flow.
+        {%- endif %}
+        Check the breaker and the pump.
+mode: single

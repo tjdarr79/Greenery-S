@@ -1,0 +1,28 @@
+alias: Farm Task Mode Left On
+description: >-
+  Any output off "auto" means Task Mode or a manual override is active, which
+  suspends normal recipe control - pumps, dosing, and lights stop following the
+  recipe. Forgetting to exit Task Mode is a silent way to lose a crop cycle.
+
+  Output 23 is excluded in farm_bridge.py because it is deliberately held in
+  manual (chiller + extra fans), so this only fires on genuinely unexpected
+  manual control.
+
+  6 hours matches the "Task Mode active >6 hours" alert queued in the README.
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_task_mode_active
+    to: "on"
+    for:
+      hours: 6
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ Task Mode Still Active
+      notification_id: farm_task_mode_active
+      message: >-
+        Task Mode / manual control has been active for 6+ hours. Recipe
+        automation is suspended. Return the farm to auto in farmhand if this
+        was not intentional.
+mode: single
