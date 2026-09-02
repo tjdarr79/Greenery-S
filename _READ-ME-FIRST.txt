@@ -1,45 +1,27 @@
-GREENERY-S UPDATE 2 — relay board mapping
+GREENERY-S UPDATE 4 — install docs, controls card, tools/ split
 
-WHAT TO DO
-----------
-1. Extract this zip.
-2. Copy its contents INTO:
-       C:\Users\Travis\Documents\GitHub\Greenery-S
-   Choose "Replace the files in the destination". The automations\ folder
-   merges - files 01 through 10 are untouched.
-3. Delete this _READ-ME-FIRST.txt from the repo folder.
-4. Open GitHub Desktop, commit, push.
+Apply AFTER update 3. Copy into C:\Users\Travis\Documents\GitHub\Greenery-S,
+replace when asked, then in GitHub Desktop DELETE the old top-level
+dump-relay.py (it has moved to tools\).
+
+Delete this file before committing.
 
 COMMIT MESSAGE
 --------------
-Map the 32-channel output board as read-only binary sensors
+Fresh-install path, controls dashboard card, tools/ split
 
-farm_bridge.py now publishes all 32 relay channels plus Task Mode Active,
-Output Board Connected, and Relay State Mismatch. Anyone cloning this repo
-gets the mapping already applied - no patch step.
+Adds dashboard-controls.yaml with the Task Mode buttons and their confirmation
+guards, a six-step ordered install section in the README, and a file inventory
+so it is clear which files are runtime and which are optional.
 
-Adds three automations: recirc pump stopped (gated on Task Mode), task mode
-left on 6+ hours, and equipment not responding.
+Moves the diagnostic scripts into tools/ with a README explaining that neither
+is needed to run the bridge. The apply_*.py patch scripts are deliberately
+excluded: farm_bridge.py already contains everything they added.
 
-Documents the ch8 chiller-pump interlock and the ch23 permanent-manual
-channel, both of which change how these sensors must be read.
-
-WHAT'S IN HERE
---------------
-farm_bridge.py      Relay mapping INCLUDED. This is the file you already
-                    applied by patch to C:\Farm - now it is the repo version
-                    too, so nobody else needs apply_relay_patch.py.
-
-automations\11-13   New only. 01-10 unchanged, not included.
-
-README.md           Output board section: full channel map with breakers,
-                    the two site-specific wiring notes, the derived signals,
-                    and the corrected navigation path
-                    (Settings > Devices & Services > MQTT > Greenery S Farm).
-
-dump-relay.py       Stdlib-only SSE reader for inspecting the board directly.
-                    Useful for working out what channels 16 and 24 do.
-
-NOTE: apply_relay_patch.py is deliberately NOT in the repo. It was a one-time
-migration tool for an already-deployed bridge. Keeping it would invite someone
-to run it against an already-patched file.
+FILES
+-----
+README.md                          New install section + repo file map.
+dashboard-controls.yaml            NEW. Task Mode card.
+tools\dump-relay.py                MOVED from repo root - delete the old one.
+tools\discover-farmhand-api.py     NEW.
+tools\README.md                    NEW.

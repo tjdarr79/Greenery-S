@@ -24,6 +24,90 @@ Built after Freight Farms' Chapter 7 bankruptcy (April 2025) and Growcer's
 acquisition of Farmhand support — this removes dependency on Farmhand's cloud
 dashboard and any paid support tier for basic monitoring.
 
+## New install — do these in order
+
+Order matters. Each step verifies before the next depends on it.
+
+### 1. Prerequisites
+
+- Python 3.8+ on a machine that stays on and can reach the farm network
+- Home Assistant with the **Mosquitto broker** add-on installed and running
+- `pip install -r requirements.txt`
+
+### 2. Configure and start the bridge
+
+Copy `farm-bridge.env.example` to `farm-bridge.env`, fill in the MQTT host and
+credentials, then run `farm_bridge.py`. See **Install** and **Running** below,
+and **Deploying unattended** for systemd / Task Scheduler.
+
+**Verify before continuing:** Settings → Devices & Services → **MQTT** →
+**Greenery S Farm**. You should see ~48 entities. Note that the device lives
+*inside* the MQTT card — it is not listed at the top level of Devices &
+Services, which is easy to miss.
+
+Nothing below works until entities are appearing.
+
+### 3. Install the alert script — and test it
+
+Settings → Automations & Scenes → **Scripts** → + Add Script → ⋮ →
+**Edit in YAML** → paste `farm-alerts-script.yaml` → Save.
+
+Change the notify target inside it to your own phone. Find yours at
+Settings → Tools → Actions, or render
+`{{ states.notify | map(attribute='entity_id') | list }}` in
+Settings → Tools → Template.
+
+**Then run it: Scripts → Farm Alerts → ⋮ → Run.** Type any title and message.
+
+If the phone does not buzz, stop here and fix it. Do not install the
+automations — they will all fail the same way. This single test is the step
+that, when skipped, let ten dead automations go unnoticed indefinitely. See
+**Notification routing** for the full explanation.
+
+### 4. Install the automations
+
+Thirteen files in `automations/`, pasted one at a time — HA's editor rejects a
+multi-automation list. None of them contain a phone name; that lives only in
+the script. See **Installing the automations**.
+
+Start with `01-bridge-offline.yaml`, then verify it with ⋮ → **Run actions**.
+If that reaches your phone, the wiring is proven for all thirteen.
+
+Hold back `13-equipment-not-responding.yaml` until the `Relay State Mismatch`
+sensor has been quiet for a few days — see the hypothesis note under
+**Output board mapping**.
+
+### 5. Add the dashboards
+
+`farm-dashboard.yaml` (desktop) and `farm-dashboard-mobile.yaml` (phone).
+
+### 6. Optional — Task Mode control
+
+`dashboard-controls.yaml` adds Enter/Exit Task Mode buttons with confirmation
+guards. Read **Task Mode control** first: the endpoint is undocumented, and the
+card must carry `confirmation:` or a pocket-tap will stop the farm.
+
+---
+
+## What is in this repo
+
+| File | Purpose |
+|---|---|
+| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, and Task Mode control all included — **no patch steps** |
+| `farm-bridge.env.example` | Copy to `farm-bridge.env` and fill in |
+| `farm-bridge.service` | systemd unit (Linux) |
+| `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
+| `automations/01`–`13` | Alert automations, pasted into HA one at a time |
+| `farm-dashboard.yaml` | Desktop dashboard |
+| `farm-dashboard-mobile.yaml` | Phone dashboard |
+| `dashboard-controls.yaml` | Task Mode control card |
+| `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
+| `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
+| `WINDOWS-INSTALL.md` | Windows-specific setup |
+
+Everything under `tools/` is optional and read-only. The bridge does not use
+them.
+
 ## Confirmed device map
 
 Reverse-engineered by cross-referencing the SSE payload against the Farmhand
@@ -348,6 +432,70 @@ through every cleanout and train you to ignore it. The meaningful alarm is
 
 `dump-relay.py` (stdlib only) prints one SSE frame's worth of channel states.
 Useful for confirming a mapping or working out what the unmapped channels do.
+
+## Task Mode control (one-tap, human-decided)
+
+Two buttons and a status sensor, published by the bridge over MQTT discovery.
+No `configuration.yaml`, no HA restart.
+
+| Entity | Sends |
+|---|---|
+| `button.enter_task_mode` | `{"command": "enter_mode", "mode": "task_mode"}` |
+| `button.exit_task_mode` | `{"command": "exit_mode"}` |
+| `sensor.farm_control_status` | Result of the last command |
+
+Endpoint: `POST http://192.168.200.200:3001/farm-control` — captured from the
+farmhand local UI with browser DevTools. Overridable via `farm-bridge.env`.
+
+### Deliberately a button, not an automation
+
+Home Assistant never puts the farm in Task Mode on its own. A stuck or
+miscalibrated sensor cannot halt production unattended — a human sees the
+alert, looks, and decides. Automatic triggering can come later, once the
+sensors have earned trust and we have watched how farmhand reacts to an
+external mode change.
+
+### It verifies itself
+
+The button does not fire and hope. After sending it waits, then reads the
+output board's own `mode` field — the same ground truth behind the
+`Task Mode Active` sensor — and reports `CONFIRMED`, or
+`NOT CONFIRMED - board still reports auto`.
+
+This closed loop only exists because the output board was mapped first. Without
+it there would be no way to know whether a command actually took.
+
+### Put a confirmation on the dashboard card
+
+```yaml
+type: button
+entity: button.enter_task_mode
+confirmation:
+  text: Put the farm in TASK MODE? Lights off, recipe suspended.
+```
+
+Without this, a pocket-tap on a phone stops the farm.
+
+### Test it deliberately, before you need it
+
+The next tank cleanout puts you in Task Mode anyway. Use the button instead of
+the farmhand UI and watch `Farm Control Status` reach `CONFIRMED`. A one-tap
+emergency control that has never been fired is a guess, not a control.
+
+### This endpoint is unsupported
+
+`/farm-control` is not a documented Freight Farms API. A farmhand update can
+change or remove it. Failures surface in `Farm Control Status` rather than
+passing silently, but expect to re-capture the request after farm software
+updates. The capture procedure: farmhand local UI → DevTools → Network →
+toggle Task Mode → read the request URL, method, and JSON body.
+
+### Emergency path if the bridge is down
+
+The buttons only exist while the bridge is alive — correct, since a dead bridge
+means the control could not be trusted. The fallback is the farmhand UI itself,
+reachable from a phone over the Tailscale tunnel (see Remote access below).
+That path is fully supported and does not depend on any of this.
 
 ## Notification routing
 

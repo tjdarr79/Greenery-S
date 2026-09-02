@@ -1,0 +1,74 @@
+# ---------------------------------------------------------------------------
+# TASK MODE CONTROL CARD
+#
+# Add via Dashboard -> Edit -> Add Card -> Manual, then paste this block.
+#
+# TWO THINGS THAT WILL BITE YOU
+#
+# 1. `confirmation:` is not optional. Without it a mis-tap on a phone in your
+#    pocket stops the farm. It is nested INSIDE tap_action.
+#
+# 2. The visual editor can emit a tap_action of `automation.trigger` with an
+#    empty target, which silently does nothing. A button card driving a
+#    `button` entity needs `perform_action: button.press` with an explicit
+#    target.entity_id, exactly as written below.
+#
+# Entity IDs carry the device prefix. The doubled "farm" in the status sensor
+# is correct: device "Greenery S Farm" + entity "Farm Control Status".
+# ---------------------------------------------------------------------------
+
+type: vertical-stack
+cards:
+  - type: button
+    show_name: true
+    show_icon: true
+    entity: button.greenery_s_farm_enter_task_mode
+    name: EMERGENCY — Task Mode
+    icon: mdi:hand-back-right
+    tap_action:
+      action: perform-action
+      perform_action: button.press
+      target:
+        entity_id: button.greenery_s_farm_enter_task_mode
+      confirmation:
+        text: Put the farm in TASK MODE? Lights off, recipe suspended.
+
+  - type: button
+    show_name: true
+    show_icon: true
+    entity: button.greenery_s_farm_exit_task_mode
+    name: Return to Auto
+    icon: mdi:play-circle
+    tap_action:
+      action: perform-action
+      perform_action: button.press
+      target:
+        entity_id: button.greenery_s_farm_exit_task_mode
+      confirmation:
+        text: Return the farm to automatic recipe control?
+
+  # The status line is not decoration. It is how you know a press actually
+  # took effect - the bridge verifies against the output board's own mode
+  # field rather than trusting the HTTP 200.
+  - type: entities
+    title: Farm Control
+    show_header_toggle: false
+    entities:
+      - entity: sensor.greenery_s_farm_farm_control_status
+        name: Last command
+      - entity: binary_sensor.greenery_s_farm_task_mode_active
+        name: Task mode
+
+  # Equipment the buttons affect. Watch these change when you press.
+  - type: entities
+    title: Key Equipment
+    show_header_toggle: false
+    entities:
+      - entity: binary_sensor.greenery_s_farm_cultivation_recirc_pump
+        name: Cultivation Recirc
+      - entity: binary_sensor.greenery_s_farm_nursery_recirc_and_chiller_pump
+        name: Nursery Recirc + Chiller
+      - entity: binary_sensor.greenery_s_farm_hvac_cooling
+        name: HVAC Cooling
+      - entity: binary_sensor.greenery_s_farm_co2_regulator
+        name: CO2 Regulator
