@@ -1,27 +1,89 @@
-GREENERY-S UPDATE 4 — install docs, controls card, tools/ split
+GREENERY-S — COMPLETE REPO, FINAL STATE
 
-Apply AFTER update 3. Copy into C:\Users\Travis\Documents\GitHub\Greenery-S,
-replace when asked, then in GitHub Desktop DELETE the old top-level
-dump-relay.py (it has moved to tools\).
+Everything through the one-click Windows installer. This is the WHOLE repo,
+not a delta. Safe to overwrite everything.
 
-Delete this file before committing.
+HOW TO UPDATE YOUR CLONE
+------------------------
+1. Extract this ZIP.
+2. Copy its contents INTO:
+       C:\Users\Travis\Documents\GitHub\Greenery-S
+   Choose "Replace the files in the destination".
+
+3. DELETE these from the repo folder if they are still there. They are stale,
+   were moved, or were never meant to ship:
+
+       notify-group.yaml
+       dump-relay.py                 (moved to tools\)
+       discover-farmhand-api.py      (moved to tools\)
+       relay_patch.py
+       apply_relay_patch.py
+       apply_control_patch.py
+       apply_modules_patch.py
+       greenery-alarm-fix.bundle
+       farm-automations-all.txt
+       PUSH-INSTRUCTIONS.md
+       *.bak
+       _READ-ME-FIRST.txt            (this file)
+
+4. VERIFY before pushing:
+
+       python tools\verify-repo.py
+
+   It must print ALL CHECKS PASSED. If it does not, do not push - send the
+   output to Claude.
+
+5. GitHub Desktop: review the diff, commit, push.
 
 COMMIT MESSAGE
 --------------
-Fresh-install path, controls dashboard card, tools/ split
+Module offline detection, full alert parity, one-click Windows installer
 
-Adds dashboard-controls.yaml with the Task Mode buttons and their confirmation
-guards, a six-step ordered install section in the README, and a file inventory
-so it is clear which files are runtime and which are optional.
+Adds per-module offline detection to farm_bridge.py, published separately by
+severity: environmental and output offline are crop emergencies, dosing offline
+silently stops correction, input offline is only a data lapse. Detection uses
+both the connected flag and last_update staleness, because a module can claim
+connected while its data stops advancing and every reading downstream would
+look plausible and mean nothing.
 
-Moves the diagnostic scripts into tools/ with a README explaining that neither
-is needed to run the bridge. The apply_*.py patch scripts are deliberately
-excluded: farm_bridge.py already contains everything they added.
+Brings the alert set to full parity with farmhand's built-in alerts by adding
+the four that were missing: low air temperature, HVAC cooling stuck 24h, send
+pump insufficient pressure, and module offline. Twenty automations total.
 
-FILES
------
-README.md                          New install section + repo file map.
-dashboard-controls.yaml            NEW. Task Mode card.
-tools\dump-relay.py                MOVED from repo root - delete the old one.
-tools\discover-farmhand-api.py     NEW.
-tools\README.md                    NEW.
+Adds a one-click Windows installer. Double-clicking INSTALL-FARM-BRIDGE.bat
+takes a non-technical operator from a downloaded ZIP to a running bridge:
+installs Python if needed, copies to C:\Farm, prompts for MQTT settings,
+tests connectivity, and registers a SYSTEM startup task with restart-on-
+failure. It refuses homeassistant.local and requires a numeric IP, reads the
+password as a SecureString, ACLs the env file, and stops any previous bridge
+before copying so an upgrade cannot silently leave old code running.
+
+Adds tools/verify-repo.py to confirm a clone is complete before anyone relies
+on it, and moves the diagnostic scripts into tools/.
+
+WHAT IS IN THIS RELEASE
+-----------------------
+farm_bridge.py            741 lines. Sensors, 32-channel relay mapping, Task
+                          Mode control, and module offline detection - all
+                          included. No patch steps for a fresh clone.
+automations\01-20         Twenty alert automations.
+farm-alerts-script.yaml   The notification hub. The only file naming a phone.
+dashboard-controls.yaml   Task Mode buttons with confirmation guards.
+watchdog-helpers.yaml     CloudGate watchdog setup notes.
+INSTALL-FARM-BRIDGE.bat   One-click Windows installer.
+UNINSTALL-FARM-BRIDGE.bat Removes the startup task, keeps your settings.
+install\                  Installer scripts.
+tools\                    verify-repo, dump-relay, discover-farmhand-api.
+README.md                 897 lines. Install path, channel map, alert coverage
+                          table, CloudGate single-point-of-failure section.
+
+ON THE FARM PC (separate from the GitHub push)
+----------------------------------------------
+If C:\Farm has not had the module patch applied yet:
+
+    cd C:\Farm
+    python .\apply_modules_patch.py .\farm_bridge.py --dry-run
+    python .\apply_modules_patch.py .\farm_bridge.py
+
+then restart the bridge. Or just replace C:\Farm\farm_bridge.py with the copy
+from this ZIP - it already contains every patch.

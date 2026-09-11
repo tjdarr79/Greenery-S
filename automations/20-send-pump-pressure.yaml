@@ -1,0 +1,52 @@
+alias: Farm Send Pump Insufficient Pressure
+description: >-
+  Replicates the Freight Farms built-in alert "Left/Right Send Pump -
+  Insufficient Pressure".
+
+  A send pump running while its line pressure stays low means a clog, an air
+  lock, a failed impeller, or a leak. The crop stops being irrigated while
+  everything else still looks normal.
+
+  This alert is only possible now that the output board is mapped: it needs to
+  know the pump is COMMANDED ON (ch2 / ch3) at the same time pressure is low.
+  Pressure alone cannot distinguish "pump off" from "pump broken".
+
+  THRESHOLD NEEDS CALIBRATION. A baseline reading with both pumps OFF showed
+  Left 8.59% and Right 0.0% - already an unexplained asymmetry worth checking
+  on its own. Watch what each reads while its pump is RUNNING, then set the
+  threshold to roughly half that. 20% is a placeholder.
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_left_send_pump
+    to: "on"
+    for:
+      minutes: 2
+    id: left
+    trigger: state
+  - entity_id: binary_sensor.greenery_s_farm_right_send_pump
+    to: "on"
+    for:
+      minutes: 2
+    id: right
+    trigger: state
+conditions:
+  - condition: template
+    value_template: >-
+      {% if trigger.id == 'left' %}
+        {{ states('sensor.greenery_s_farm_left_send_pressure') | float(100) < 20 }}
+      {% else %}
+        {{ states('sensor.greenery_s_farm_right_send_pressure') | float(100) < 20 }}
+      {% endif %}
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ Send Pump - Insufficient Pressure
+      notification_id: farm_send_pump_pressure
+      message: >-
+        {{ 'Left' if trigger.id == 'left' else 'Right' }} send pump has run 2+
+        minutes with line pressure at
+        {{ states('sensor.greenery_s_farm_left_send_pressure' if trigger.id == 'left'
+           else 'sensor.greenery_s_farm_right_send_pressure') }}%.
+        The crop may not be getting irrigated. Check for a clog, an air lock,
+        a leak, or a failed impeller.
+mode: single

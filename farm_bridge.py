@@ -215,6 +215,8 @@ def publish_binary_states(client, payload: dict):
 
     outputs = board.get("state") or {}
     modes = board.get("mode") or {}
+    LATEST_MODES.clear()
+    LATEST_MODES.update(modes)
     shadow = board.get("shadow") or {}
 
     def send(uid, on):
@@ -261,6 +263,283 @@ def publish_binary_discovery(client, availability_topic: str):
         log.info(f"Published discovery config for {bsensor.name}")
 # --- END relay output board mapping ---
 
+# --- BEGIN farmhand task mode control (added by apply_control_patch) ---
+# ---------------------------------------------------------------------------
+# ONE-TAP TASK MODE CONTROL
+#
+# Captured from the farmhand local UI (DevTools):
+#     {"command": "enter_mode", "mode": "task_mode"}
+#     {"command": "exit_mode"}
+#     {"command": "get_current_mode"}
+#
+# UNSUPPORTED ENDPOINT. Freight Farms can change this in any update. It will
+# fail loudly (Farm Control Status goes to "failed"), not silently - but expect
+# to re-capture it after a farmhand update.
+#
+# Endpoint confirmed by DevTools capture on this farm. Both values are
+# overridable via farm-bridge.env (FARM_CONTROL_URL, FARM_CONTROL_TRANSPORT)
+# if the farm's IP changes or a future farmhand build moves the route.
+# ---------------------------------------------------------------------------
+
+# CONFIRMED from DevTools: POST http://192.168.200.200:3001/farm-control -> 200 OK
+FARMHAND_CONTROL_TRANSPORT = os.environ.get("FARM_CONTROL_TRANSPORT", "http")   # "http" or "ws"
+FARMHAND_CONTROL_URL = os.environ.get(
+    "FARM_CONTROL_URL", "http://192.168.200.200:3001/farm-control"
+)
+
+CMD_ENTER_TASK_MODE = {"command": "enter_mode", "mode": "task_mode"}
+CMD_EXIT_MODE = {"command": "exit_mode"}
+CMD_GET_MODE = {"command": "get_current_mode"}
+
+CONTROL_TIMEOUT = 15          # seconds for the command round-trip
+VERIFY_DELAY = 6              # seconds to wait for the SSE stream to reflect it
+
+# Latest per-channel mode from the output board, refreshed on every SSE frame.
+# This is the ground truth used to verify a command actually took effect.
+LATEST_MODES = {}
+
+
+def _control_status(client, text):
+    client.publish(f"{MQTT_BASE_TOPIC}/control_status/state", text, retain=True)
+    log.info("Farm control status: %s", text)
+
+
+def _farm_in_task_mode() -> bool:
+    """True if any channel is off 'auto', ignoring the permanently-manual ones."""
+    excluded = {f"output_{c}" for c in TASK_MODE_EXCLUDE}
+    return any(v != "auto" for k, v in LATEST_MODES.items() if k not in excluded)
+
+
+async def _ws_command(payload: dict) -> str:
+    async with aiohttp.ClientSession() as session:
+        async with session.ws_connect(FARMHAND_CONTROL_URL,
+                                      timeout=CONTROL_TIMEOUT) as ws:
+            await ws.send_json(payload)
+            try:
+                msg = await asyncio.wait_for(ws.receive(), timeout=CONTROL_TIMEOUT)
+                return str(msg.data)[:200]
+            except asyncio.TimeoutError:
+                return "(sent, no reply)"
+
+
+def _http_command(payload: dict) -> str:
+    import urllib.request
+    req = urllib.request.Request(
+        FARMHAND_CONTROL_URL,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=CONTROL_TIMEOUT) as r:
+        return r.read().decode("utf-8", "replace")[:200]
+
+
+def farmhand_command(payload: dict) -> str:
+    """Send one command. Runs in paho's callback thread, so it uses its own
+    short-lived event loop rather than reaching into the main one."""
+    if FARMHAND_CONTROL_TRANSPORT == "http":
+        return _http_command(payload)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(_ws_command(payload))
+    finally:
+        loop.close()
+
+
+def handle_control_command(client, action: str):
+    """Send, then VERIFY against the output board rather than assuming."""
+    want_task_mode = (action == "enter")
+    payload = CMD_ENTER_TASK_MODE if want_task_mode else CMD_EXIT_MODE
+    label = "Enter Task Mode" if want_task_mode else "Exit Task Mode"
+
+    _control_status(client, f"{label}: sending")
+    try:
+        reply = farmhand_command(payload)
+        log.info("farmhand replied: %s", reply)
+    except Exception as e:
+        _control_status(client, f"{label}: FAILED - {type(e).__name__}: {e}")
+        return
+
+    _control_status(client, f"{label}: sent, verifying")
+    time.sleep(VERIFY_DELAY)
+
+    actual = _farm_in_task_mode()
+    if actual == want_task_mode:
+        _control_status(client, f"{label}: CONFIRMED")
+    else:
+        _control_status(
+            client,
+            f"{label}: NOT CONFIRMED - board still reports "
+            f"{'task mode' if actual else 'auto'}"
+        )
+
+
+def publish_button_discovery(client, availability_topic: str):
+    buttons = [
+        ("enter_task_mode", "Enter Task Mode", "mdi:hand-back-right"),
+        ("exit_task_mode", "Exit Task Mode", "mdi:play-circle"),
+    ]
+    for uid, name, icon in buttons:
+        client.publish(
+            f"{DISCOVERY_PREFIX}/button/{uid}/config",
+            json.dumps({
+                "name": name,
+                "unique_id": f"greenery_s_{uid}",
+                "command_topic": f"{MQTT_BASE_TOPIC}/{uid}/set",
+                "payload_press": "PRESS",
+                "availability_topic": availability_topic,
+                "icon": icon,
+                "device": {
+                    "identifiers": ["greenery_s_farm"],
+                    "name": "Greenery S Farm",
+                    "manufacturer": "Freight Farms",
+                    "model": "Greenery S",
+                },
+            }),
+            qos=1, retain=True,
+        )
+        log.info(f"Published discovery config for {name}")
+
+    client.publish(
+        f"{DISCOVERY_PREFIX}/sensor/control_status/config",
+        json.dumps({
+            "name": "Farm Control Status",
+            "unique_id": "greenery_s_control_status",
+            "state_topic": f"{MQTT_BASE_TOPIC}/control_status/state",
+            "availability_topic": availability_topic,
+            "icon": "mdi:message-alert",
+            "entity_category": "diagnostic",
+            "device": {
+                "identifiers": ["greenery_s_farm"],
+                "name": "Greenery S Farm",
+                "manufacturer": "Freight Farms",
+                "model": "Greenery S",
+            },
+        }),
+        qos=1, retain=True,
+    )
+    client.publish(f"{MQTT_BASE_TOPIC}/control_status/state", "idle", retain=True)
+    log.info("Published discovery config for Farm Control Status")
+# --- END farmhand task mode control ---
+
+# --- BEGIN module offline detection (added by apply_modules_patch) ---
+# ---------------------------------------------------------------------------
+# MODULE OFFLINE DETECTION
+#
+# Replicates the Freight Farms built-in alert "Module has been offline for 5
+# minutes" locally, so it still fires when the farmhand cloud is unreachable.
+#
+# device_id -> (friendly name, severity, what breaks when it is offline)
+# Severity drives which automation treats it as critical.
+# ---------------------------------------------------------------------------
+
+MODULE_MAP = {
+    "94E68607D090": ("Environmental Module", "critical",
+                     "farm refuses to run HVAC or LEDs"),
+    "244CAB0FC00C": ("Output Module", "critical",
+                     "no farm equipment receives power"),
+    "94E68607D218": ("Cultivation Dosing Module", "high",
+                     "no cultivation dosing; pH and EC drift uncorrected"),
+    "244CAB0FD624": ("Nursery Dosing Module", "high",
+                     "no nursery dosing; pH and EC drift uncorrected"),
+    "8C4B14715024": ("Input Module", "info",
+                     "tank depth and pressure data stops updating"),
+}
+
+# farmhand's own definition of offline.
+MODULE_STALE_SECONDS = 300
+
+
+def _module_slug(name: str) -> str:
+    return name.lower().replace(" ", "_")
+
+
+MODULE_SENSORS = [
+    BinarySensorDef(
+        unique_id=f"{_module_slug(_name)}_online",
+        name=f"{_name} Online",
+        device_class="connectivity",
+        entity_category=None if _sev in ("critical", "high") else "diagnostic",
+    )
+    for _dev, (_name, _sev, _why) in MODULE_MAP.items()
+] + [
+    # One rollup so a dashboard can show a single red light, and so an
+    # automation can catch a module we have not individually mapped.
+    BinarySensorDef("any_module_offline", "Any Module Offline",
+                    device_class="problem"),
+]
+
+
+def publish_module_states(client, payload: dict):
+    """A module is offline if it says so, OR if it has stopped reporting.
+
+    The staleness half matters more: a module can keep claiming `connected`
+    while its data goes stale, and the bridge would republish the last known
+    values indefinitely - plausible readings that no longer describe the farm.
+    """
+    devices = payload.get("state") or {}
+    now = time.time()
+    any_offline = False
+
+    for dev_id, (name, _sev, _why) in MODULE_MAP.items():
+        dev = devices.get(dev_id) or {}
+
+        if not dev:
+            online = False
+        else:
+            connected = dev.get("connected")
+            last = dev.get("last_update")
+            fresh = True
+            if isinstance(last, (int, float)):
+                fresh = (now - float(last)) < MODULE_STALE_SECONDS
+            online = (connected is not False) and fresh
+
+        if not online:
+            any_offline = True
+            log.warning("Module offline: %s (%s)", name, dev_id)
+
+        client.publish(
+            f"{MQTT_BASE_TOPIC}/{_module_slug(name)}_online/state",
+            "ON" if online else "OFF",
+            retain=True,
+        )
+
+    client.publish(
+        f"{MQTT_BASE_TOPIC}/any_module_offline/state",
+        "ON" if any_offline else "OFF",
+        retain=True,
+    )
+
+
+def publish_module_discovery(client, availability_topic: str):
+    for bsensor in MODULE_SENSORS:
+        payload = {
+            "name": bsensor.name,
+            "unique_id": f"greenery_s_{bsensor.unique_id}",
+            "state_topic": f"{MQTT_BASE_TOPIC}/{bsensor.unique_id}/state",
+            "availability_topic": availability_topic,
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device": {
+                "identifiers": ["greenery_s_farm"],
+                "name": "Greenery S Farm",
+                "manufacturer": "Freight Farms",
+                "model": "Greenery S",
+            },
+        }
+        if bsensor.device_class:
+            payload["device_class"] = bsensor.device_class
+        if bsensor.entity_category:
+            payload["entity_category"] = bsensor.entity_category
+        client.publish(
+            f"{DISCOVERY_PREFIX}/binary_sensor/{bsensor.unique_id}/config",
+            json.dumps(payload), qos=1, retain=True,
+        )
+        log.info(f"Published discovery config for {bsensor.name}")
+# --- END module offline detection ---
+
+
+
 
 # ---------------------------------------------------------------------------
 # MQTT setup
@@ -291,6 +570,8 @@ def build_mqtt_client() -> mqtt.Client:
         if rc == 0:
             log.info(f"MQTT connected: {msg}")
             c.publish(availability_topic, "online", qos=1, retain=True)
+            c.subscribe(f"{MQTT_BASE_TOPIC}/enter_task_mode/set", qos=1)
+            c.subscribe(f"{MQTT_BASE_TOPIC}/exit_task_mode/set", qos=1)
         else:
             log.error(f"MQTT connection FAILED: {msg}")
 
@@ -300,6 +581,16 @@ def build_mqtt_client() -> mqtt.Client:
 
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
+
+    def on_message(c, userdata, msg):
+        topic = msg.topic
+        log.info("MQTT command received on %s", topic)
+        if topic.endswith("/enter_task_mode/set"):
+            handle_control_command(c, "enter")
+        elif topic.endswith("/exit_task_mode/set"):
+            handle_control_command(c, "exit")
+
+    client.on_message = on_message
 
     try:
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
@@ -365,6 +656,8 @@ def publish_discovery(client: mqtt.Client):
         log.info(f"Published discovery config for {sensor.name}")
 
     publish_binary_discovery(client, availability_topic)
+    publish_button_discovery(client, availability_topic)
+    publish_module_discovery(client, availability_topic)
 
 
 def extract_value(payload: dict, sensor: SensorDef):
@@ -388,6 +681,7 @@ def publish_states(client: mqtt.Client, payload: dict):
         client.publish(state_topic, round(value, 2) if isinstance(value, float) else value, retain=True)
 
     publish_binary_states(client, payload)
+    publish_module_states(client, payload)
 
 # ---------------------------------------------------------------------------
 # SSE stream reader

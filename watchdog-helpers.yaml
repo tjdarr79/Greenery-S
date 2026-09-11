@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# HELPERS for the CloudGate watchdog.
+#
+# Create these in the UI - Settings > Devices & Services > Helpers > + Create
+# Helper. No configuration.yaml edit needed.
+#
+#   Toggle    named exactly:  Farm Alert Missed     -> input_boolean.farm_alert_missed
+#   Text      named exactly:  Farm Missed Alert     -> input_text.farm_missed_alert
+#                             (set max length to 255)
+#
+# ---------------------------------------------------------------------------
+# INTERNET REACHABILITY SENSOR
+#
+# Settings > Devices & Services > + Add Integration > "Ping"
+# Add TWO, on deliberately different networks so one provider's blip cannot
+# trigger a pointless power cycle:
+#
+#     1.1.1.1     (Cloudflare)   -> binary_sensor.ping_1_1_1_1
+#     8.8.8.8     (Google)       -> binary_sensor.ping_8_8_8_8
+#
+# Then create this template sensor:
+#   Settings > Devices & Services > Helpers > + Create Helper > Template >
+#   Template a binary sensor
+#
+#     Name:  Farm Internet Up
+#     State template:
+#         {{ is_state('binary_sensor.ping_1_1_1_1','on')
+#            or is_state('binary_sensor.ping_8_8_8_8','on') }}
+#
+# "or" is deliberate: internet counts as UP if EITHER target answers. Only a
+# real outage takes both down, and a needless CloudGate power cycle is worse
+# than a few minutes of delay.
+# ---------------------------------------------------------------------------

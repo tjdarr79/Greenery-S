@@ -28,6 +28,32 @@ dashboard and any paid support tier for basic monitoring.
 
 Order matters. Each step verifies before the next depends on it.
 
+### Easiest path: the one-click Windows installer
+
+If the farm PC runs Windows, skip the manual steps below. Extract the repo and
+**double-click `INSTALL-FARM-BRIDGE.bat`**. It installs Python if needed, copies
+the bridge to `C:\Farm`, asks for your Home Assistant MQTT details, tests the
+connections, and creates a startup task so it survives reboots.
+
+Then come back and do steps 3 onward — the Home Assistant side is pasted into
+the HA UI and cannot be installed from the PC.
+
+See `install/README.md` for exactly what it does. It is safe to re-run and
+doubles as the upgrade path.
+
+The manual steps below remain for non-Windows hosts and for anyone who wants to
+see what the installer is doing.
+
+### 0. Verify the clone
+
+```
+python tools/verify-repo.py
+```
+
+Read-only. Confirms every file is present, each feature's code actually landed,
+all YAML parses, and no stale files survived. If it does not print
+`ALL CHECKS PASSED`, fix that before configuring anything.
+
 ### 1. Prerequisites
 
 - Python 3.8+ on a machine that stays on and can reach the farm network
@@ -97,13 +123,18 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 | `farm-bridge.env.example` | Copy to `farm-bridge.env` and fill in |
 | `farm-bridge.service` | systemd unit (Linux) |
 | `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
-| `automations/01`–`13` | Alert automations, pasted into HA one at a time |
+| `automations/01`–`20` | Alert automations, pasted into HA one at a time |
+| `watchdog-helpers.yaml` | Helper + Ping setup for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard |
 | `farm-dashboard-mobile.yaml` | Phone dashboard |
 | `dashboard-controls.yaml` | Task Mode control card |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
-| `WINDOWS-INSTALL.md` | Windows-specific setup |
+| `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
+| `INSTALL-FARM-BRIDGE.bat` | **One-click Windows installer** — double-click this |
+| `UNINSTALL-FARM-BRIDGE.bat` | Removes the startup task; keeps your settings |
+| `install/` | Installer scripts and what they do |
+| `WINDOWS-INSTALL.md` | Manual Windows setup, if you prefer doing it by hand |
 
 Everything under `tools/` is optional and read-only. The bridge does not use
 them.
@@ -290,7 +321,7 @@ level of Devices & Services. Easy to miss when you are looking for it by name.
 
 ## Alert automations
 
-Thirteen phone-notification automations live in `automations/`, one file each,
+Twenty phone-notification automations live in `automations/`, one file each,
 covering the thresholds actually needed for daily operation. They notify
 via Home Assistant's Companion App, not email/SMS.
 
@@ -313,6 +344,13 @@ deployed — see "Notification routing" below.**
 | `11-recirc-pump-stopped.yaml` | Either recirc pump off **while in auto** | 5 min | Dosing stops AND the hydro sensors go stale — pH/EC keep reporting plausible numbers for standing water. Gated on Task Mode so cleanouts stay silent |
 | `12-task-mode-left-on.yaml` | Task Mode active | 6 hours | Recipe automation suspended. The alert this README had queued and could not build until the relay board was mapped |
 | `13-equipment-not-responding.yaml` | Relay state ≠ shadow | 15 min | **Validate before enabling** — see the hypothesis note above |
+| `14-cloudgate-watchdog.yaml` | Internet down | 10 min | Power-cycles CloudGate — see CloudGate section |
+| `15-missed-alerts-replay.yaml` | Internet restored | 30 s | Re-sends an alert that could not be delivered during an outage |
+| `16-module-offline-critical.yaml` | Environmental or Output module offline | 5 min | **Crop emergency.** Farm refuses HVAC/LEDs, or no equipment gets power at all |
+| `17-module-offline-dosing.yaml` | Either dosing module offline | 5 min | No dosing occurs, and the pH/EC alarms cannot catch it — same module, stale readings |
+| `18-air-temp-low.yaml` | Air temp <55 °F | 15 min | Heater failure or tripped CB11. Only the high half existed before |
+| `19-hvac-cooling-stuck.yaml` | HVAC cooling continuous | 24 h | Not reaching setpoint — refrigerant, condenser, or a load it cannot match |
+| `20-send-pump-pressure.yaml` | Send pump on with low line pressure | 2 min | Clog, air lock, or failed impeller. Crop stops being irrigated |
 
 ### Water temp measurement caveat (important)
 
@@ -497,6 +535,135 @@ means the control could not be trusted. The fallback is the farmhand UI itself,
 reachable from a phone over the Tailscale tunnel (see Remote access below).
 That path is fully supported and does not depend on any of this.
 
+## Single point of failure: CloudGate
+
+**The farm's only internet path is CloudGate cellular, and Home Assistant
+shares it.**
+
+CloudGate freezes periodically. When it does:
+
+- The farm keeps running. The Hub is local and the recipe executes locally.
+- The HA bridge keeps working. It reads `192.168.200.200` over the LAN.
+- Every automation keeps firing correctly.
+- **And not one notification leaves the building.**
+
+Everything reads green while nothing reaches the phone. This is not
+theoretical: it is how the farm reached 81 °F undetected, discovered only
+because the farmhand data looked stale and the owner drove out to check.
+
+Understand this clearly: **the alerting in this repo does not survive a
+CloudGate freeze on its own.** Automations 14 and 15 shorten the window and
+recover the lost alert, but they do not remove the dependency.
+
+### Automation 14 — watchdog
+
+Ping two targets on different networks. Both unreachable for 10 minutes →
+power-cycle CloudGate → wait up to 6 minutes for recovery → report.
+
+Cycles at most once per 30 minutes. If two cycles do not fix it, the outage is
+upstream — carrier, or no signal — and further cycling only wears the hardware.
+In that case it sends a critical alert (which will only arrive once
+connectivity returns) stating plainly that the farm is unmonitored from
+outside.
+
+**The plug must be LOCALLY controlled** — Shelly, Zigbee, or ESPHome. A
+cloud-dependent plug (Tuya, most Kasa configurations) cannot be reached when
+the internet is down, which is the only time this automation runs. Getting this
+wrong produces a watchdog that works in testing and fails in production.
+
+### Automation 15 — missed alert replay
+
+Push notifications sent during an outage are **lost, not queued**. An alarm
+that fires during a CloudGate freeze never arrives.
+
+`farm-alerts-script.yaml` records any alert it could not deliver
+(`input_boolean.farm_alert_missed` + `input_text.farm_missed_alert`), and
+automation 15 replays it once connectivity returns — flagged as possibly stale.
+
+An outage now delays an alert instead of erasing it. This is what turns the
+persistent-notification fallback from a passive log into a delivery queue.
+
+### Setup
+
+See `watchdog-helpers.yaml` for the two helpers and the Ping integration
+config. All UI, no `configuration.yaml`.
+
+### The structural fix is a second uplink
+
+The watchdog shrinks the blind window from *"however long until you notice"*
+to roughly 12–16 minutes. That is a large improvement and it is not a fix.
+
+While CloudGate is down there is still no path out of the container. A
+temperature excursion in that window is delayed, not caught.
+
+A second, independent uplink — different carrier, or any wired service
+available at the site — is the only thing that removes the single point of
+failure. Give Home Assistant its own path to the internet and the farm's
+monitoring stops depending on the same box whose freezes caused the problem.
+
+For a facility holding perishable inventory, that is worth more than any
+sensor on the roadmap.
+
+## Module offline detection
+
+The farm's internal communication runs over five modules. Freight Farms ships a
+built-in alert — *"Module has been offline for 5 minutes"* — but it is delivered
+through the farmhand **cloud**, which is exactly what goes silent when CloudGate
+freezes. `farm_bridge.py` detects it locally instead.
+
+Urgency differs sharply by module, so they are published separately rather than
+lumped into one sensor. From the Freight Farms module troubleshooting article:
+
+| Module | Device | Offline means | Severity |
+|---|---|---|---|
+| Environmental | `94E68607D090` | *"the farm will refuse to turn on the HVAC system or the LED lights"* | **CRITICAL** |
+| Output | `244CAB0FC00C` | *"none of your equipment will receive power"* | **CRITICAL** |
+| Cultivation Dosing | `94E68607D218` | *"no water supply dosing occurs"* | HIGH |
+| Nursery Dosing | `244CAB0FD624` | same, nursery side | HIGH |
+| Input | `8C4B14715024` | *"will not pose an immediate threat to your crops"* — data lapse only | INFO |
+
+### Two detection signals
+
+A module counts as offline if **either** holds:
+
+- its own `connected` flag reports false
+- `last_update` is older than 300 s — farmhand's own 5-minute definition
+
+The staleness half is the one that matters. **A module can keep claiming
+`connected` while its data stops advancing**, and the bridge would go on
+republishing its last known values indefinitely. pH, EC, temperature and relay
+states would all read plausibly and mean nothing.
+
+This is the same trap as a stopped recirc pump: the readings do not go blank,
+they go *wrong*. Every alarm downstream of an offline module is unreliable
+until it clears, which is why automations 16 and 17 say so explicitly in the
+notification text.
+
+### First response
+
+Per Freight Farms, before entering the farm check the **high-voltage electrical
+box on the exterior back** for tripped breakers. A dosing module offline is most
+often a **leak in the dosing cabinet**, especially at sensor ports after a recent
+hydro sensor calibration — water reaching a power block trips the whole branch on
+the right side of the nursery station, which is why an input module alert often
+arrives alongside it.
+
+### Coverage against farmhand's built-in alerts
+
+| Freight Farms built-in alert | Covered by |
+|---|---|
+| Farm has been in Task Mode for 6 hours | `12-task-mode-left-on` |
+| Farm has been offline for 1 hour | `01-bridge-offline` + `14-cloudgate-watchdog` |
+| High Humidity | `06-humidity-high` |
+| High or Low Air Temperature | `05-air-temp-high` + `18-air-temp-low` |
+| HVAC Cooling has been running for 24 hours | `19-hvac-cooling-stuck` |
+| Left/Right Send Pump — Insufficient Pressure | `20-send-pump-pressure` |
+| Low CO2 | `04-co2-below-minimum` |
+| Module has been offline for 5 minutes | `16` + `17` |
+
+Full parity, plus the alarms farmhand does not ship: water temp, EC low, CO2
+high, tank depth, recirc pump stopped, and relay mismatch.
+
 ## Notification routing
 
 ### The problem this solves
@@ -573,7 +740,7 @@ throws `Message malformed: extra keys not allowed @ data['0']` if you try)
 2. Skip the visual builder — click the three-dot menu → **Edit in YAML**
 3. Paste the full contents of one file (e.g. `01-bridge-offline.yaml`)
 4. Save
-5. Repeat for the remaining twelve files
+5. Repeat for the remaining nineteen files
 
 Nothing in these files needs editing for your setup. They contain no phone
 name — that lives only in the script.

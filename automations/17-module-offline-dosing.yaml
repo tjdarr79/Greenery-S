@@ -1,0 +1,37 @@
+alias: Farm Dosing Module Offline
+description: >-
+  Per Freight Farms: "When your dosing modules are offline, no water supply
+  dosing occurs." pH and EC drift with nothing correcting them.
+
+  Not instantly crop-fatal like the environmental or output modules, but it
+  silently disables the correction loop - and the pH/EC alarms will NOT catch
+  it, because the readings come from the same offline module and simply stop
+  updating at their last plausible value.
+
+  Most common cause per Freight Farms is a LEAK in the dosing cabinet, often
+  at sensor ports after a recent hydro sensor calibration. Water reaching a
+  power block can trip the whole branch on the right side of the nursery
+  station - which is why an input module offline alert often arrives with this
+  one.
+triggers:
+  - entity_id:
+      - binary_sensor.greenery_s_farm_cultivation_dosing_module_online
+      - binary_sensor.greenery_s_farm_nursery_dosing_module_online
+    to: "off"
+    for:
+      minutes: 5
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ Dosing Module Offline - no dosing
+      notification_id: farm_dosing_module_offline
+      message: >-
+        {{ trigger.to_state.name }} offline 5+ minutes. No dosing is occurring
+        in that zone and its pH/EC readings are now STALE - the pH and EC
+        alarms cannot catch this. Check the dosing cabinet for leaks,
+        especially at sensor ports if hydro sensors were calibrated recently.
+        Also check for a tripped branch on the right side of the nursery
+        station.
+mode: single

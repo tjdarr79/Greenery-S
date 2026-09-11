@@ -95,6 +95,31 @@ sequence:
       message: >-
         {{ message }} (logged {{ now().strftime('%Y-%m-%d %H:%M') }})
 
+  # --- STEP 1b: record it if we cannot deliver right now. -------------------
+  # Push notifications sent while the internet is down are LOST, not queued.
+  # The farm's only uplink is CloudGate, which freezes periodically - that is
+  # how the farm reached 81F undetected. Recording the alert here lets
+  # automation 15 replay it once connectivity returns, so an outage delays an
+  # alert instead of erasing it.
+  #
+  # Degrades safely: if binary_sensor.farm_internet_up does not exist, the
+  # condition is false and this step is skipped.
+  - if:
+      - condition: state
+        entity_id: binary_sensor.farm_internet_up
+        state: "off"
+    then:
+      - action: input_text.set_value
+        continue_on_error: true
+        target:
+          entity_id: input_text.farm_missed_alert
+        data:
+          value: "{{ (title ~ ' - ' ~ message) | truncate(250, true, '') }}"
+      - action: input_boolean.turn_on
+        continue_on_error: true
+        target:
+          entity_id: input_boolean.farm_alert_missed
+
   # --- STEP 2: the push, via the DURABLE entity. ----------------------------
   # This is the one line to change if the phone is ever replaced.
   - action: notify.send_message

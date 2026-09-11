@@ -1,0 +1,55 @@
+alias: Farm Module Offline - CRITICAL
+description: >-
+  Replicates the Freight Farms built-in alert "Module has been offline for 5
+  minutes" for the two modules where offline means the farm stops working.
+
+  Per the Freight Farms module troubleshooting article:
+
+    ENVIRONMENTAL MODULE - "requires immediate action. Without an online
+    environmental module, your farm will refuse to turn on the HVAC system or
+    the LED lights."
+
+    OUTPUT MODULE - "requires immediate action. Your output module controls all
+    life in the farm - when your output module is offline, none of your
+    equipment will receive power."
+
+  Either of these offline is a crop emergency, not a data problem.
+
+  WHY THIS EXISTS WHEN FARMHAND ALREADY HAS IT: farmhand delivers its alert
+  through the cloud, which is exactly what goes silent when CloudGate freezes.
+  This one fires locally.
+
+  ALSO IMPORTANT: while a module is offline the bridge keeps republishing its
+  last known values. pH, EC, temp and relay states will look plausible and be
+  meaningless. Treat every reading from an offline module as stale.
+
+  First response per Freight Farms: check the high-voltage electrical box on
+  the exterior back of the farm for tripped breakers BEFORE entering.
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_environmental_module_online
+    to: "off"
+    for:
+      minutes: 5
+    trigger: state
+  - entity_id: binary_sensor.greenery_s_farm_output_module_online
+    to: "off"
+    for:
+      minutes: 5
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: 🚨 MODULE OFFLINE - GO TO THE FARM
+      notification_id: farm_module_offline_critical
+      critical: true
+      message: >-
+        {{ trigger.to_state.name }} has been offline 5+ minutes.
+        {%- if 'Environmental' in trigger.to_state.name %}
+          The farm will REFUSE to run HVAC or LEDs while this is offline.
+        {%- else %}
+          NO farm equipment is receiving power while this is offline.
+        {%- endif %}
+        Check the high-voltage box on the exterior back for tripped breakers
+        BEFORE entering. All readings from this module are now stale.
+mode: single

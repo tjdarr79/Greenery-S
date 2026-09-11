@@ -1,0 +1,28 @@
+alias: Farm Air Temp Low
+description: >-
+  Freight Farms ships a built-in "High or Low Air Temperature" alert. Only the
+  high half existed here - a heater failure in winter was entirely unmonitored.
+
+  55F is a starting threshold, not a validated one. The Greenery normally holds
+  65-75F, and per the owners manual the LED heat load means the heater rarely
+  runs at all once the farm is in production. Sustained cold therefore means
+  the heater failed, a breaker tripped (HVAC is CB11), or the door is open.
+
+  TUNE THIS against your own recipe's night setpoint before trusting it.
+triggers:
+  - entity_id: sensor.greenery_s_farm_farm_air_temp
+    below: 55
+    for:
+      minutes: 15
+    trigger: numeric_state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ Farm Air Temp Low
+      notification_id: farm_air_temp_low
+      message: >-
+        Air temp is {{ trigger.to_state.state }}°F - below 55°F for 15+
+        minutes. Check the HVAC heater, breaker CB11, and whether the farm door
+        is closed.
+mode: single

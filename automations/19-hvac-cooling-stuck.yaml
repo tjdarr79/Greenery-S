@@ -1,0 +1,32 @@
+alias: Farm HVAC Cooling Running 24 Hours
+description: >-
+  Replicates the Freight Farms built-in alert "HVAC Cooling has been running
+  for 24 hours".
+
+  Continuous cooling for a full day means the HVAC is not reaching setpoint:
+  low refrigerant, a failing compressor, a blocked condenser, or a heat load
+  the unit cannot match. It also means the LED heat is not being rejected,
+  which feeds directly back into water temperature.
+
+  This one is worth watching closely here. A spot reading already showed HVAC
+  cooling active at 68.5F air temp with EVERY cultivation LED off - cooling
+  demand with zero light load. If that pattern persists, the constraint is the
+  envelope or the unit, not the lights, and that changes both the insulation
+  decision and the Phase 2 battery sizing.
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_hvac_cooling
+    to: "on"
+    for:
+      hours: 24
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ⚠️ HVAC Cooling Running 24h
+      notification_id: farm_hvac_cooling_stuck
+      message: >-
+        HVAC cooling has run continuously for 24 hours. It is not reaching
+        setpoint. Check refrigerant, the condenser coil for blockage, and the
+        air filter. Current air temp {{ states('sensor.greenery_s_farm_farm_air_temp') }}°F.
+mode: single

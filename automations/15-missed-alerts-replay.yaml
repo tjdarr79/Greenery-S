@@ -1,0 +1,36 @@
+alias: Replay Alerts Missed While Offline
+description: >-
+  Push notifications sent while the internet is down are lost, not queued. An
+  alarm that fires during a CloudGate freeze never reaches the phone.
+
+  farm-alerts-script.yaml records any alert it could not deliver. This
+  automation replays it once connectivity returns, so an outage delays an alert
+  instead of erasing it.
+
+  This is what turns the persistent-notification fallback from a passive log
+  into an actual delivery queue.
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.farm_internet_up
+    to: "on"
+    for:
+      seconds: 30
+conditions:
+  - condition: state
+    entity_id: input_boolean.farm_alert_missed
+    state: "on"
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: MISSED ALERT - fired while offline
+      notification_id: farm_missed_alert
+      critical: true
+      message: >-
+        This alert fired while the farm had no internet and could not be
+        delivered at the time: {{ states('input_text.farm_missed_alert') }}
+        - Check current conditions; this may be stale.
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.farm_alert_missed
+mode: single

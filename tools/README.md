@@ -43,6 +43,24 @@ Faster alternative when you have a browser on the farm network: open the
 farmhand UI, F12 → Network, toggle Task Mode, and read the request URL, method,
 and JSON body directly. That is how the current endpoint was found.
 
+## verify-repo.py
+
+Confirms a clone is complete and correct before you rely on it or hand it to
+someone else.
+
+```
+python tools/verify-repo.py
+```
+
+Read-only. Exits 0 if everything passes, 1 if not.
+
+Checks file presence, the content markers that prove each feature actually
+landed, YAML validity, Python syntax, and the *absence* of stale files that
+should have been removed or moved. It deliberately does not compare checksums,
+so Windows CRLF line endings cannot cause false failures.
+
+Run it after any merge, and before telling anyone the repo is ready.
+
 ## Not in this repo
 
 `apply_relay_patch.py` and `apply_control_patch.py` were one-time migration

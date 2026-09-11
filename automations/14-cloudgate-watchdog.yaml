@@ -1,0 +1,76 @@
+alias: CloudGate Watchdog - Auto Power Cycle
+description: >-
+  CloudGate freezes periodically. When it does, the farm keeps running (the Hub
+  is local and the HA bridge is LAN-side) but the container loses its ONLY
+  internet path - which means HA's push notifications cannot leave the building.
+
+  This is the failure that let the farm reach 81F undetected: everything green,
+  nothing reaching the phone.
+
+  Power-cycling CloudGate recovers it. This automation does that automatically
+  after 10 minutes of confirmed internet loss.
+
+  HARDWARE REQUIREMENT: the plug must be LOCALLY controlled - Shelly, Zigbee,
+  or ESPHome. A cloud-dependent plug (Tuya, most Kasa setups) cannot be reached
+  when the internet is down, which is the only time this automation runs.
+
+  TWO ping targets on different networks so a single provider blip cannot
+  trigger a needless power cycle.
+
+  mode: single plus the 30-minute cooldown condition prevents a boot-loop if
+  the outage is upstream of CloudGate and cycling cannot fix it.
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.farm_internet_up
+    to: "off"
+    for:
+      minutes: 10
+conditions:
+  # Do not cycle more than once every 30 minutes. If two cycles did not fix it,
+  # the problem is upstream (carrier outage, no signal) and power cycling is
+  # just wearing out the hardware.
+  - condition: template
+    value_template: >-
+      {{ (as_timestamp(now())
+          - as_timestamp(states.automation.cloudgate_watchdog_auto_power_cycle.attributes.last_triggered, 0))
+          > 1800 }}
+actions:
+  - action: switch.turn_off
+    target:
+      entity_id: switch.cloudgate_power
+  - delay:
+      seconds: 20
+  - action: switch.turn_on
+    target:
+      entity_id: switch.cloudgate_power
+
+  # CloudGate takes 2-4 minutes to boot and register on the cellular network.
+  - wait_for_trigger:
+      - trigger: state
+        entity_id: binary_sensor.farm_internet_up
+        to: "on"
+    timeout:
+      minutes: 6
+    continue_on_timeout: true
+
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: >-
+        {{ 'CloudGate Recovered' if is_state('binary_sensor.farm_internet_up','on')
+           else 'CloudGate Power Cycle FAILED' }}
+      notification_id: cloudgate_watchdog
+      critical: "{{ not is_state('binary_sensor.farm_internet_up','on') }}"
+      message: >-
+        {% if is_state('binary_sensor.farm_internet_up','on') %}
+          Internet was down 10+ min. CloudGate was power cycled and is back
+          online. Farm control was never affected - the Hub and HA bridge are
+          local. Alerts were unreachable during the outage; see any MISSED
+          ALERT message.
+        {% else %}
+          Internet still down 6 minutes after power cycling CloudGate. This is
+          likely a carrier outage or no signal, not a frozen gateway. No further
+          automatic cycles for 30 minutes. THE FARM IS UNMONITORED FROM OUTSIDE
+          until this clears - check it in person if conditions were marginal.
+        {% endif %}
+mode: single
