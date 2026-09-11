@@ -157,9 +157,12 @@ if ($python) {
     $installed = $false
     if (Get-Command "winget.exe" -ErrorAction SilentlyContinue) {
         Write-Info "Trying winget..."
+        # --scope machine: the startup task below runs as SYSTEM, which does not
+        # see a per-user winget install (winget's default scope). Without this,
+        # "Python installed" here can still mean "invisible after reboot."
         foreach ($id in @("Python.Python.3.14", "Python.Python.3.13", "Python.Python.3.12")) {
             try {
-                & winget.exe install --id $id -e --source winget `
+                & winget.exe install --id $id -e --source winget --scope machine `
                     --accept-package-agreements --accept-source-agreements --silent 2>&1 | Out-Null
                 if ($LASTEXITCODE -eq 0) { $installed = $true; Write-Ok "Installed via winget ($id)"; break }
             } catch { }

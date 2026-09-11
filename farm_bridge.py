@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 
@@ -216,8 +217,9 @@ def publish_binary_states(client, payload: dict):
 
     outputs = board.get("state") or {}
     modes = board.get("mode") or {}
-    LATEST_MODES.clear()
-    LATEST_MODES.update(modes)
+    with _MODES_LOCK:
+        LATEST_MODES.clear()
+        LATEST_MODES.update(modes)
     shadow = board.get("shadow") or {}
 
     def send(uid, on):
@@ -297,7 +299,12 @@ VERIFY_DELAY = 6              # seconds to wait for the SSE stream to reflect it
 
 # Latest per-channel mode from the output board, refreshed on every SSE frame.
 # This is the ground truth used to verify a command actually took effect.
+#
+# Written from the asyncio thread (via publish_binary_states) and read from
+# paho's network thread (via handle_control_command) - guard both sides so a
+# reader never sees a mid-clear()/update() dict.
 LATEST_MODES = {}
+_MODES_LOCK = threading.Lock()
 
 
 def _control_status(client, text):
@@ -308,7 +315,9 @@ def _control_status(client, text):
 def _farm_in_task_mode() -> bool:
     """True if any channel is off 'auto', ignoring the permanently-manual ones."""
     excluded = {f"output_{c}" for c in TASK_MODE_EXCLUDE}
-    return any(v != "auto" for k, v in LATEST_MODES.items() if k not in excluded)
+    with _MODES_LOCK:
+        modes = dict(LATEST_MODES)
+    return any(v != "auto" for k, v in modes.items() if k not in excluded)
 
 
 async def _ws_command(payload: dict) -> str:
