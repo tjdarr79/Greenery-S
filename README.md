@@ -28,7 +28,34 @@ dashboard and any paid support tier for basic monitoring.
 
 Order matters. Each step verifies before the next depends on it.
 
-### Easiest path: the one-click Windows installer
+### Best path: run it on Home Assistant itself (no PC needed)
+
+If you have Home Assistant OS — HA Green, Yellow, a Pi, or an x86 box — install
+the bridge as an **add-on** and skip the separate computer entirely.
+
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
+2. Add `https://github.com/tjdarr79/Greenery-S`
+3. Install **Greenery S Farm Bridge**, press **Start**
+
+That is usually all of it. If the Mosquitto broker add-on is installed and
+running, the bridge takes the broker address and credentials from Home
+Assistant automatically — **there is nothing to type**. No IP, no username, no
+password.
+
+That one property removes the single most failure-prone step in this whole
+setup: the `homeassistant.local` trap and wrong MQTT credentials, which between
+them account for most of the "Setup gotchas" below.
+
+You also get config through a UI form, logs in the HA Logs tab, automatic
+start with a watchdog, inclusion in HA backups, and an Update button when the
+repository moves forward.
+
+See `greenery-bridge/DOCS.md` for options and troubleshooting.
+
+Then come back and do steps 3 onward — the alerting is pasted into the HA UI
+and is not part of the add-on.
+
+### If Home Assistant is not on your network: the Windows installer
 
 If the farm PC runs Windows, skip the manual steps below. Extract the repo and
 **double-click `INSTALL-FARM-BRIDGE.bat`**. It installs Python if needed, copies
@@ -131,7 +158,9 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
-| `INSTALL-FARM-BRIDGE.bat` | **One-click Windows installer** — double-click this |
+| `greenery-bridge/` | **Home Assistant add-on** — the best way to run this |
+| `repository.yaml` | Makes this repo installable as an HA add-on repository |
+| `INSTALL-FARM-BRIDGE.bat` | One-click Windows installer, if HA OS is not an option |
 | `UNINSTALL-FARM-BRIDGE.bat` | Removes the startup task; keeps your settings |
 | `install/` | Installer scripts and what they do |
 | `WINDOWS-INSTALL.md` | Manual Windows setup, if you prefer doing it by hand |

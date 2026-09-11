@@ -1,0 +1,43 @@
+---
+name: Greenery S Farm Bridge
+version: "1.0.0"
+slug: greenery_bridge
+description: >-
+  Publishes Freight Farms Greenery S sensors, relay states and Task Mode
+  controls to Home Assistant over MQTT. Reads the farm's local Farmhand
+  endpoint directly - no cloud subscription required for monitoring.
+url: https://github.com/tjdarr79/Greenery-S
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+startup: application
+boot: auto
+
+# "want" rather than "need": Supervisor supplies the broker credentials
+# automatically when the Mosquitto add-on is installed, but an external broker
+# can still be used via the manual override options below.
+services:
+  - mqtt:want
+
+# The farm controller is on the LAN, so the add-on needs normal network access.
+host_network: false
+
+options:
+  farm_host: 192.168.200.200
+  farm_port: 3001
+  log_level: info
+  mqtt_host: ""
+  mqtt_port: 0
+  mqtt_user: ""
+  mqtt_password: ""
+
+schema:
+  farm_host: str
+  farm_port: port
+  log_level: list(debug|info|warning|error)
+  mqtt_host: str?
+  mqtt_port: int(0,65535)?
+  mqtt_user: str?
+  mqtt_password: password?

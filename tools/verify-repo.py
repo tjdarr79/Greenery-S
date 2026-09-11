@@ -36,6 +36,11 @@ REQUIRED = [
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "INSTALL-FARM-BRIDGE.bat", "UNINSTALL-FARM-BRIDGE.bat",
+    "repository.yaml",
+    "greenery-bridge/config.yaml", "greenery-bridge/Dockerfile",
+    "greenery-bridge/run.sh", "greenery-bridge/farm_bridge.py",
+    "greenery-bridge/requirements.txt", "greenery-bridge/DOCS.md",
+    "greenery-bridge/CHANGELOG.md",
     "install/Install-FarmBridge.ps1", "install/Uninstall-FarmBridge.ps1",
     "install/README.md",
 ]
@@ -97,7 +102,17 @@ MARKERS = {
         ("Single point of failure: CloudGate", "the CloudGate dependency, stated"),
         ("Module offline detection", "module offline documentation"),
         ("Coverage against farmhand", "built-in alert parity table"),
+        ("run it on Home Assistant itself", "add-on install path"),
         ("MQTT \u2192 Greenery S Farm", "where entities actually live"),
+    ],
+    "greenery-bridge/run.sh": [
+        ("bashio::services mqtt", "auto MQTT credentials from Supervisor"),
+        ("No MQTT broker found", "clear failure message"),
+        ("FARM_SSE_URL", "farm endpoint exported"),
+    ],
+    "greenery-bridge/config.yaml": [
+        ("mqtt:want", "MQTT service declared"),
+        ("aarch64", "HA Green architecture"),
     ],
     "install/Install-FarmBridge.ps1": [
         ("Greenery S Farm Bridge", "scheduled task name"),
@@ -186,6 +201,17 @@ def main():
         except SyntaxError as e:
             check(False, rel, f"line {e.lineno}: {e.msg}")
 
+    print("\n--- Add-on bridge copy matches root ---")
+    a = root / "farm_bridge.py"
+    b = root / "greenery-bridge" / "farm_bridge.py"
+    if a.is_file() and b.is_file():
+        same = (a.read_bytes().replace(b"\r\n", b"\n") ==
+                b.read_bytes().replace(b"\r\n", b"\n"))
+        check(same, "greenery-bridge/farm_bridge.py is identical to the root copy",
+              "they have DRIFTED - copy the root one over it")
+    else:
+        check(False, "both copies of farm_bridge.py present")
+
     print("\n--- Size sanity ---")
     fb = root / "farm_bridge.py"
     if fb.is_file():
@@ -195,7 +221,7 @@ def main():
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 863, f"README.md is {n} lines (expect ~883)",
+        check(n >= 892, f"README.md is {n} lines (expect ~912)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

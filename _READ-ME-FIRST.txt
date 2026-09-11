@@ -1,7 +1,6 @@
-GREENERY-S — COMPLETE REPO, FINAL STATE
+GREENERY-S — COMPLETE REPO, FINAL STATE (now with the Home Assistant add-on)
 
-Everything through the one-click Windows installer. This is the WHOLE repo,
-not a delta. Safe to overwrite everything.
+The WHOLE repo, not a delta. Safe to overwrite everything.
 
 HOW TO UPDATE YOUR CLONE
 ------------------------
@@ -10,8 +9,8 @@ HOW TO UPDATE YOUR CLONE
        C:\Users\Travis\Documents\GitHub\Greenery-S
    Choose "Replace the files in the destination".
 
-3. DELETE these from the repo folder if they are still there. They are stale,
-   were moved, or were never meant to ship:
+3. DELETE these from the repo folder if still present - stale, moved, or never
+   meant to ship:
 
        notify-group.yaml
        dump-relay.py                 (moved to tools\)
@@ -26,64 +25,44 @@ HOW TO UPDATE YOUR CLONE
        *.bak
        _READ-ME-FIRST.txt            (this file)
 
-4. VERIFY before pushing:
+4. VERIFY:   python tools\verify-repo.py
+   Must print ALL CHECKS PASSED.
 
-       python tools\verify-repo.py
-
-   It must print ALL CHECKS PASSED. If it does not, do not push - send the
-   output to Claude.
-
-5. GitHub Desktop: review the diff, commit, push.
+5. Commit and push.
 
 COMMIT MESSAGE
 --------------
-Module offline detection, full alert parity, one-click Windows installer
+Home Assistant add-on: run the bridge on HA itself and retire the PC
 
-Adds per-module offline detection to farm_bridge.py, published separately by
-severity: environmental and output offline are crop emergencies, dosing offline
-silently stops correction, input offline is only a data lapse. Detection uses
-both the connected flag and last_update staleness, because a module can claim
-connected while its data stops advancing and every reading downstream would
-look plausible and mean nothing.
+Packages the bridge as an HA add-on installable from this repo as a custom
+add-on repository, replacing the separate always-on Windows PC.
 
-Brings the alert set to full parity with farmhand's built-in alerts by adding
-the four that were missing: low air temperature, HVAC cooling stuck 24h, send
-pump insufficient pressure, and module offline. Twenty automations total.
+Supervisor already knows the MQTT broker's address and credentials, so the
+add-on reads them with bashio::services and the operator types nothing. That
+removes the most failure-prone step in the project - the homeassistant.local
+trap and wrong MQTT credentials - which the Windows installer needs a third of
+its code to defend against.
 
-Adds a one-click Windows installer. Double-clicking INSTALL-FARM-BRIDGE.bat
-takes a non-technical operator from a downloaded ZIP to a running bridge:
-installs Python if needed, copies to C:\Farm, prompts for MQTT settings,
-tests connectivity, and registers a SYSTEM startup task with restart-on-
-failure. It refuses homeassistant.local and requires a numeric IP, reads the
-password as a SecureString, ACLs the env file, and stops any previous bridge
-before copying so an upgrade cannot silently leave old code running.
+Also adds MQTT_PORT and LOG_LEVEL as environment-configurable in the bridge,
+and a byte-for-byte drift check in verify-repo.py between the root
+farm_bridge.py and the copy inside the add-on's Docker build context.
 
-Adds tools/verify-repo.py to confirm a clone is complete before anyone relies
-on it, and moves the diagnostic scripts into tools/.
+Not build-tested: no Docker daemon was available and HA Green is aarch64.
+Manifest, shell and YAML are validated; the image build is unproven until
+someone installs it.
 
-WHAT IS IN THIS RELEASE
------------------------
-farm_bridge.py            741 lines. Sensors, 32-channel relay mapping, Task
-                          Mode control, and module offline detection - all
-                          included. No patch steps for a fresh clone.
-automations\01-20         Twenty alert automations.
-farm-alerts-script.yaml   The notification hub. The only file naming a phone.
-dashboard-controls.yaml   Task Mode buttons with confirmation guards.
-watchdog-helpers.yaml     CloudGate watchdog setup notes.
-INSTALL-FARM-BRIDGE.bat   One-click Windows installer.
-UNINSTALL-FARM-BRIDGE.bat Removes the startup task, keeps your settings.
-install\                  Installer scripts.
-tools\                    verify-repo, dump-relay, discover-farmhand-api.
-README.md                 897 lines. Install path, channel map, alert coverage
-                          table, CloudGate single-point-of-failure section.
+AFTER PUSHING - INSTALL THE ADD-ON
+----------------------------------
+1. Settings > Add-ons > Add-on Store > three-dot menu > Repositories
+2. Add:  https://github.com/tjdarr79/Greenery-S
+3. Install "Greenery S Farm Bridge"
+4. Before starting it, STOP the Windows bridge. Two bridges publishing the same
+   MQTT topics will fight each other.
+       On the farm PC:  schtasks /end /tn "Greenery S Farm Bridge"
+       and set it disabled, or run UNINSTALL-FARM-BRIDGE.bat
+5. Start the add-on. Watch its Log tab for "MQTT connected".
+6. Check Settings > Devices & Services > MQTT > Greenery S Farm still shows
+   ~54 entities and the values are updating.
+7. Once it has run a day, the Windows PC can be shut off.
 
-ON THE FARM PC (separate from the GitHub push)
-----------------------------------------------
-If C:\Farm has not had the module patch applied yet:
-
-    cd C:\Farm
-    python .\apply_modules_patch.py .\farm_bridge.py --dry-run
-    python .\apply_modules_patch.py .\farm_bridge.py
-
-then restart the bridge. Or just replace C:\Farm\farm_bridge.py with the copy
-from this ZIP - it already contains every patch.
+If the image fails to build, send the add-on's build log and it can be fixed.
