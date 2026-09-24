@@ -43,6 +43,26 @@ Faster alternative when you have a browser on the farm network: open the
 farmhand UI, F12 → Network, toggle Task Mode, and read the request URL, method,
 and JSON body directly. That is how the current endpoint was found.
 
+## render-farm-yaml.py
+
+Writes one farm's copy of every Home Assistant YAML file — automations,
+dashboards, controls card — with that farm's entity IDs.
+
+```
+python tools/render-farm-yaml.py "Smith Farm"
+```
+
+Needed for any farm whose app **Farm name** is not the default
+`Greenery S Farm`. The repo's files name `greenery_s_farm_*` entities, which
+do not exist on such a farm; an automation triggered by a missing entity never
+fires and never errors.
+
+Output goes to `rendered/<slug>/` (gitignored). It never modifies the repo's
+own files and never contacts the farm. It re-reads its output and refuses to
+pass if any old entity ID survived. If Home Assistant's actual prefix differs
+from the one it predicts (rare: names with `ß` or `1,000`-style numbers), pass
+`--slug`.
+
 ## verify-repo.py
 
 Confirms a clone is complete and correct before you rely on it or hand it to

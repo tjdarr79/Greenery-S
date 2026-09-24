@@ -1,6 +1,6 @@
 ---
 name: Greenery S Farm Bridge
-version: "1.0.0"
+version: "1.1.0"
 slug: greenery_bridge
 description: >-
   Publishes Freight Farms Greenery S sensors, relay states and Task Mode
@@ -24,7 +24,11 @@ services:
 # The farm controller is on the LAN, so the add-on needs normal network access.
 host_network: false
 
+# farm_name defaults to the name every install had before it was configurable.
+# Supervisor fills a new option's default into EXISTING installs on upgrade, so
+# any other default would silently rename an upgraded farm's device.
 options:
+  farm_name: Greenery S Farm
   farm_host: 192.168.200.200
   farm_port: 3001
   log_level: info
@@ -34,6 +38,7 @@ options:
   mqtt_password: ""
 
 schema:
+  farm_name: str(1,)
   farm_host: str
   farm_port: port
   log_level: list(debug|info|warning|error)

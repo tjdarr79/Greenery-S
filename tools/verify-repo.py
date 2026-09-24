@@ -29,20 +29,27 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 REQUIRED = [
-    "README.md", "LICENSE", "WINDOWS-INSTALL.md", "requirements.txt",
+    "README.md", "LICENSE", "requirements.txt",
+    "CONTRIBUTING.md",
     "farm_bridge.py", "farm-bridge.env.example", "farm-bridge.service",
     "farm-alerts-script.yaml", "dashboard-controls.yaml",
     "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
-    "INSTALL-FARM-BRIDGE.bat", "UNINSTALL-FARM-BRIDGE.bat",
+    "tools/render-farm-yaml.py",
     "repository.yaml",
     "greenery-bridge/config.yaml", "greenery-bridge/Dockerfile",
     "greenery-bridge/run.sh", "greenery-bridge/farm_bridge.py",
     "greenery-bridge/requirements.txt", "greenery-bridge/DOCS.md",
-    "greenery-bridge/CHANGELOG.md",
-    "install/Install-FarmBridge.ps1", "install/Uninstall-FarmBridge.ps1",
-    "install/README.md",
+    "greenery-bridge/CHANGELOG.md", "greenery-bridge/translations/en.yaml",
+    # Retired Windows path, kept for reference and emergency fallback
+    "legacy/windows-installer/README.md",
+    "legacy/windows-installer/INSTALL-FARM-BRIDGE.bat",
+    "legacy/windows-installer/UNINSTALL-FARM-BRIDGE.bat",
+    "legacy/windows-installer/WINDOWS-INSTALL.md",
+    "legacy/windows-installer/install/Install-FarmBridge.ps1",
+    "legacy/windows-installer/install/Uninstall-FarmBridge.ps1",
+    "legacy/windows-installer/install/README.md",
 ]
 
 AUTOMATIONS = [
@@ -66,6 +73,10 @@ SHOULD_NOT_EXIST = [
     ("relay_patch.py", "superseded - farm_bridge.py already contains it"),
     ("_READ-ME-FIRST.txt", "packaging note, not part of the repo"),
     ("greenery-alarm-fix.bundle", "transfer artifact, not part of the repo"),
+    ("INSTALL-FARM-BRIDGE.bat", "retired to legacy/windows-installer/"),
+    ("UNINSTALL-FARM-BRIDGE.bat", "retired to legacy/windows-installer/"),
+    ("install", "retired to legacy/windows-installer/install/"),
+    ("WINDOWS-INSTALL.md", "retired to legacy/windows-installer/"),
 ]
 
 # Content that proves each feature actually landed
@@ -85,6 +96,10 @@ MARKERS = {
         ("MODULE_STALE_SECONDS", "5-minute staleness definition"),
         ("publish_module_states", "module offline publishing"),
         ("publish_module_discovery", "module offline discovery"),
+        ('os.environ.get("FARM_NAME")', "farm name read from the environment"),
+        ('LEGACY_FARM_NAME = "Greenery S Farm"', "unset farm name keeps today's device"),
+        ('"name": FARM_NAME,', "device named after the farm"),
+        ('"device": DEVICE_INFO,', "one shared device block"),
     ],
     "farm-alerts-script.yaml": [
         ("notify.send_message", "durable notify ENTITY path"),
@@ -92,6 +107,11 @@ MARKERS = {
         ("persistent_notification.create", "audit-trail fallback"),
         ("input_boolean.farm_alert_missed", "missed-alert recording"),
         ("channel: alarm_stream", "Android critical payload"),
+        ("states('input_text.farm_name')", "farm name read for alert titles"),
+    ],
+    "watchdog-helpers.yaml": [
+        ("input_text.farm_name", "Farm Name helper documented"),
+        ("KNOWN ROUGH EDGE", "helper vs app option mismatch flagged"),
     ],
     "README.md": [
         ("New install", "fresh-install path"),
@@ -104,23 +124,52 @@ MARKERS = {
         ("Coverage against farmhand", "built-in alert parity table"),
         ("run it on Home Assistant itself", "add-on install path"),
         ("MQTT \u2192 Greenery S Farm", "where entities actually live"),
+        ("Greenery-S#stable", "customer farms told to use the stable branch"),
+        ("Never commit to or work from `stable`", "developers told to stay off stable"),
+    ],
+    "CONTRIBUTING.md": [
+        ("git merge --ff-only main", "stable only fast-forwards to main"),
+        ("Never commit to `stable`", "stable is release-only"),
+        ("CHANGELOG", "every release carries a changelog entry"),
     ],
     "greenery-bridge/run.sh": [
         ("bashio::services mqtt", "auto MQTT credentials from Supervisor"),
         ("No MQTT broker found", "clear failure message"),
         ("FARM_SSE_URL", "farm endpoint exported"),
+        ("export FARM_NAME=\"$(bashio::config 'farm_name')\"", "farm name passed to the bridge"),
+        ("FARM_CONTROL_URL", "Task Mode endpoint follows farm_host"),
     ],
     "greenery-bridge/config.yaml": [
         ("mqtt:want", "MQTT service declared"),
         ("aarch64", "HA Green architecture"),
+        ("farm_name: Greenery S Farm", "legacy default - upgrades are not renamed"),
+        ("farm_name: str(1,)", "farm name can never be blank"),
     ],
-    "install/Install-FarmBridge.ps1": [
+    "greenery-bridge/translations/en.yaml": [
+        ("farm_name:", "farm name is a labelled field"),
+    ],
+    "greenery-bridge/DOCS.md": [
+        ("`farm_name`", "farm name documented"),
+        ("before the first start", "set-once instruction"),
+        ("render-farm-yaml.py", "per-farm YAML step documented"),
+        ("Greenery-S#stable", "customer install URL"),
+        ("If either check fails", "fallback if branch selection does not work"),
+    ],
+    "tools/render-farm-yaml.py": [
+        ("ENTITY_REF.subn", "entity IDs rewritten"),
+        ("old entity IDs survived", "self-check of its own output"),
+    ],
+    "legacy/windows-installer/install/Install-FarmBridge.ps1": [
         ("Greenery S Farm Bridge", "scheduled task name"),
         ("Register-ScheduledTask", "startup task creation"),
         ("AsSecureString", "password not echoed"),
         ("SetAccessRuleProtection", "env file locked down"),
         ("Test-TcpPort", "connectivity self-test"),
         ("homeassistant", "rejects the mDNS name"),
+        ('Join-Path $PSScriptRoot "..\\..\\.."', "finds the bridge files at the repo root"),
+    ],
+    "legacy/windows-installer/README.md": [
+        ("Do not use this for a new install", "marked as retired"),
     ],
     "dashboard-controls.yaml": [
         ("confirmation:", "confirmation guard"),
@@ -181,8 +230,22 @@ def main():
             check("script.farm_alerts" in t, f"{p.name} routes via script")
             check("notify.mobile_app" not in t, f"{p.name} has no hardcoded phone")
 
+    print("\n--- Every alert title carries the farm name ---")
+    # Three delivery paths: persistent notification, notify entity, legacy
+    # critical service. One missed means one banner with no farm on it.
+    fa = root / "farm-alerts-script.yaml"
+    if fa.is_file():
+        t = fa.read_text(encoding="utf-8", errors="replace")
+        n = t.count('title: "{{ alert_title }}"')
+        check(n == 3, f"farm-alerts-script.yaml: {n}/3 delivery titles use alert_title",
+              "a notification path skips the farm-name prefix")
+        check('title: "{{ title }}"' not in t, "farm-alerts-script.yaml: no bare title left")
+
     print("\n--- YAML parses ---")
-    for p in sorted(root.glob("*.yaml")) + sorted(adir.glob("*.yaml") if adir.is_dir() else []):
+    bdir = root / "greenery-bridge"
+    for p in (sorted(root.glob("*.yaml"))
+              + sorted(adir.glob("*.yaml") if adir.is_dir() else [])
+              + sorted(bdir.glob("*.yaml")) + sorted(bdir.glob("translations/*.yaml"))):
         try:
             yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))
             check(True, p.relative_to(root).as_posix())
@@ -190,7 +253,8 @@ def main():
             check(False, p.relative_to(root).as_posix(), str(e)[:70])
 
     print("\n--- Python parses ---")
-    for rel in ["farm_bridge.py", "tools/dump-relay.py", "tools/discover-farmhand-api.py"]:
+    for rel in ["farm_bridge.py", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
+                "tools/render-farm-yaml.py"]:
         p = root / rel
         if not p.is_file():
             check(False, f"{rel} (missing)")
@@ -212,16 +276,48 @@ def main():
     else:
         check(False, "both copies of farm_bridge.py present")
 
+    print("\n--- Release metadata in sync ---")
+    # Supervisor offers an update only when config.yaml's version rises, and
+    # the CHANGELOG is what the update dialog shows. A version with no entry,
+    # or an entry with no version bump, is a release nobody can read or get.
+    cfg, log_md = bdir / "config.yaml", bdir / "CHANGELOG.md"
+    try:
+        version = str(yaml.safe_load(cfg.read_text(encoding="utf-8"))["version"])
+        top = next((ln[3:].strip() for ln in log_md.read_text(encoding="utf-8").splitlines()
+                    if ln.startswith("## ")), None)
+        check(version == top,
+              f"config.yaml version {version} is the top CHANGELOG entry",
+              f"CHANGELOG starts at {top}")
+    except (OSError, KeyError, TypeError, yaml.YAMLError) as e:
+        check(False, "config.yaml version readable", str(e)[:70])
+
+    print("\n--- Farm slug identical in bridge and render tool ---")
+    # The render tool predicts the entity IDs the bridge's device name produces.
+    # If the two slug functions disagree, rendered automations name entities
+    # that do not exist - and a trigger on a missing entity never fires.
+    bodies = []
+    for rel in ["farm_bridge.py", "tools/render-farm-yaml.py"]:
+        p = root / rel
+        try:
+            fn = next(n for n in ast.walk(ast.parse(p.read_text(encoding="utf-8")))
+                      if isinstance(n, ast.FunctionDef) and n.name == "farm_slug")
+            bodies.append(ast.dump(ast.Module(body=fn.body[1:], type_ignores=[])))
+        except (OSError, SyntaxError, StopIteration):
+            bodies.append(None)
+    check(None not in bodies and bodies[0] == bodies[1],
+          "farm_slug() matches in farm_bridge.py and tools/render-farm-yaml.py",
+          "they have DRIFTED - rendered YAML would reference the wrong entity IDs")
+
     print("\n--- Size sanity ---")
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 721, f"farm_bridge.py is {n} lines (expect ~741)",
+        check(n >= 770, f"farm_bridge.py is {n} lines (expect ~790)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 892, f"README.md is {n} lines (expect ~912)",
+        check(n >= 927, f"README.md is {n} lines (expect ~947)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

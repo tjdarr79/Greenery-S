@@ -1,13 +1,15 @@
 # install/
 
+> **Retired** — see `../README.md`. New installs use the Home Assistant app.
+
 One-click Windows installer for the farm bridge. Built so a non-technical
 operator can get from a downloaded ZIP to a running bridge without touching a
 command line.
 
 ## For the operator
 
-Extract the ZIP, then **double-click `INSTALL-FARM-BRIDGE.bat`** in the main
-folder. Click **Yes** on the Windows permission prompt. That is the whole
+Extract the ZIP, then **double-click `INSTALL-FARM-BRIDGE.bat`** in
+`legacy/windows-installer/`. Click **Yes** on the Windows permission prompt. That is the whole
 instruction.
 
 To remove it later, double-click `UNINSTALL-FARM-BRIDGE.bat`.

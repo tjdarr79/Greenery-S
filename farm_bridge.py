@@ -26,8 +26,10 @@ import asyncio
 import json
 import logging
 import os
+import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 
 import aiohttp
@@ -61,6 +63,54 @@ SSE_READ_TIMEOUT_SECONDS = 90     # stream aborts ~60s server-side; this is our
 
 # Overridable so the Home Assistant add-on can expose it as a dropdown.
 LOG_LEVEL = getattr(logging, os.environ.get("FARM_LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+# ---------------------------------------------------------------------------
+# FARM IDENTITY
+#
+# FARM_NAME becomes the Home Assistant device name. HA builds every entity ID
+# from device name + entity name, so this decides the IDs a FRESH install gets:
+#     "Smith Farm"  ->  sensor.smith_farm_cultivation_ph
+#
+# The default is the name every install had before this was configurable. Keep
+# it: an install upgraded with no farm_name set must come up exactly as before.
+#
+# HA fixes an entity ID in its registry the first time it sees the entity. A
+# later rename changes the device and friendly names only; the IDs stay put.
+# Set it once, before first start - see DOCS.md.
+#
+# Deliberately NOT derived from the name: unique_ids, the device identifier and
+# the MQTT topics. Each farm has its own broker, so they cannot collide, and
+# tying them to an editable name would orphan every entity on a rename.
+# ---------------------------------------------------------------------------
+
+LEGACY_FARM_NAME = "Greenery S Farm"
+DEVICE_IDENTIFIER = "greenery_s_farm"   # HA device registry key - never change
+
+
+def farm_slug(name: str) -> str:
+    """The prefix Home Assistant will give this farm's entity IDs.
+
+    Mirrors HA's slugify for Latin-script names: accents folded to ASCII, every
+    other run of non-alphanumerics collapsed to one underscore. Keep identical
+    to the copy in tools/render-farm-yaml.py - verify-repo.py checks it.
+    """
+    folded = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "_", folded.lower()).strip("_")
+
+
+FARM_NAME_REQUESTED = (os.environ.get("FARM_NAME") or "").strip()
+# A name with no letters or digits gives HA nothing to build an ID from.
+FARM_NAME = FARM_NAME_REQUESTED if farm_slug(FARM_NAME_REQUESTED) else LEGACY_FARM_NAME
+FARM_SLUG = farm_slug(FARM_NAME)
+
+# Shared by every discovery payload, so every entity lands on one device that
+# carries the farm's name.
+DEVICE_INFO = {
+    "identifiers": [DEVICE_IDENTIFIER],
+    "name": FARM_NAME,
+    "manufacturer": "Freight Farms",
+    "model": "Greenery S",
+}
 
 # ---------------------------------------------------------------------------
 # Sensor definitions - drives both MQTT topic naming and HA discovery payloads
@@ -251,12 +301,7 @@ def publish_binary_discovery(client, availability_topic: str):
             "availability_topic": availability_topic,
             "payload_on": "ON",
             "payload_off": "OFF",
-            "device": {
-                "identifiers": ["greenery_s_farm"],
-                "name": "Greenery S Farm",
-                "manufacturer": "Freight Farms",
-                "model": "Greenery S",
-            },
+            "device": DEVICE_INFO,
         }
         if bsensor.device_class:
             payload["device_class"] = bsensor.device_class
@@ -399,12 +444,7 @@ def publish_button_discovery(client, availability_topic: str):
                 "payload_press": "PRESS",
                 "availability_topic": availability_topic,
                 "icon": icon,
-                "device": {
-                    "identifiers": ["greenery_s_farm"],
-                    "name": "Greenery S Farm",
-                    "manufacturer": "Freight Farms",
-                    "model": "Greenery S",
-                },
+                "device": DEVICE_INFO,
             }),
             qos=1, retain=True,
         )
@@ -419,12 +459,7 @@ def publish_button_discovery(client, availability_topic: str):
             "availability_topic": availability_topic,
             "icon": "mdi:message-alert",
             "entity_category": "diagnostic",
-            "device": {
-                "identifiers": ["greenery_s_farm"],
-                "name": "Greenery S Farm",
-                "manufacturer": "Freight Farms",
-                "model": "Greenery S",
-            },
+            "device": DEVICE_INFO,
         }),
         qos=1, retain=True,
     )
@@ -530,12 +565,7 @@ def publish_module_discovery(client, availability_topic: str):
             "availability_topic": availability_topic,
             "payload_on": "ON",
             "payload_off": "OFF",
-            "device": {
-                "identifiers": ["greenery_s_farm"],
-                "name": "Greenery S Farm",
-                "manufacturer": "Freight Farms",
-                "model": "Greenery S",
-            },
+            "device": DEVICE_INFO,
         }
         if bsensor.device_class:
             payload["device_class"] = bsensor.device_class
@@ -629,12 +659,7 @@ def publish_discovery(client: mqtt.Client):
         "payload_on": "online",
         "payload_off": "offline",
         "device_class": "connectivity",
-        "device": {
-            "identifiers": ["greenery_s_farm"],
-            "name": "Greenery S Farm",
-            "manufacturer": "Freight Farms",
-            "model": "Greenery S",
-        },
+        "device": DEVICE_INFO,
     }
     client.publish(status_config_topic, json.dumps(status_payload), qos=1, retain=True)
     log.info("Published discovery config for Farm Bridge Status")
@@ -648,12 +673,7 @@ def publish_discovery(client: mqtt.Client):
             "unique_id": f"greenery_s_{sensor.unique_id}",
             "state_topic": state_topic,
             "availability_topic": availability_topic,
-            "device": {
-                "identifiers": ["greenery_s_farm"],
-                "name": "Greenery S Farm",
-                "manufacturer": "Freight Farms",
-                "model": "Greenery S",
-            },
+            "device": DEVICE_INFO,
         }
         if sensor.unit:
             payload["unit_of_measurement"] = sensor.unit
@@ -717,7 +737,26 @@ async def stream_farm_data(mqtt_client: mqtt.Client):
                 log.debug(f"Published farm state @ {time.strftime('%X')}")
 
 
+def log_farm_identity():
+    """Say up front which farm this is and what its entity IDs will be.
+
+    The repo's automations and dashboards reference entity IDs literally, so
+    whoever installs a new farm needs this prefix to render them - see
+    tools/render-farm-yaml.py.
+    """
+    if FARM_NAME_REQUESTED and FARM_NAME_REQUESTED != FARM_NAME:
+        log.warning("Farm name %r has no letters or digits; using %r instead",
+                    FARM_NAME_REQUESTED, FARM_NAME)
+    log.info("Farm name: %s", FARM_NAME)
+    log.info("New entities get IDs like sensor.%s_cultivation_ph "
+             "(entities already in HA keep the IDs they have)", FARM_SLUG)
+    if FARM_NAME != LEGACY_FARM_NAME:
+        log.info('Render the HA automations/dashboards for this farm with: '
+                 'python tools/render-farm-yaml.py "%s"', FARM_NAME)
+
+
 async def run_forever():
+    log_farm_identity()
     mqtt_client = None
 
     # Retry MQTT setup itself - a transient network blip or the broker not
