@@ -66,6 +66,8 @@ def farm_slug(name: str) -> str:
 
 def render(text: str, name: str, slug: str):
     text, n_ids = ENTITY_REF.subn(lambda m: f"{m.group(1)}.{slug}_", text)
+    if name == LEGACY_FARM_NAME:
+        return text, n_ids, 0
     # json.dumps gives a double-quoted string, which is valid YAML whatever
     # punctuation the farm name contains.
     text, n_titles = DASHBOARD_TITLE.subn(
