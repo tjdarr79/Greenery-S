@@ -13,10 +13,19 @@ set -e
 
 bashio::log.info "Greenery S Farm Bridge starting..."
 
+# --- Farm identity --------------------------------------------------------
+# Becomes the HA device name, so it decides a fresh install's entity IDs.
+export FARM_NAME="$(bashio::config 'farm_name')"
+bashio::log.info "Farm name: ${FARM_NAME}"
+
 # --- Farm endpoint --------------------------------------------------------
 FARM_HOST=$(bashio::config 'farm_host')
 FARM_PORT=$(bashio::config 'farm_port')
 export FARM_SSE_URL="http://${FARM_HOST}:${FARM_PORT}/farm-data"
+# Task Mode commands go to the same controller. Without this the bridge falls
+# back to its built-in 192.168.200.200, and a farm on any other address would
+# get working sensors but Task Mode buttons that POST to the wrong host.
+export FARM_CONTROL_URL="http://${FARM_HOST}:${FARM_PORT}/farm-control"
 bashio::log.info "Farm endpoint: ${FARM_SSE_URL}"
 
 # --- MQTT: Supervisor first, manual override second -----------------------

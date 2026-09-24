@@ -35,7 +35,28 @@ the bridge as an **add-on** and skip the separate computer entirely.
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
 2. Add `https://github.com/tjdarr79/Greenery-S`
-3. Install **Greenery S Farm Bridge**, press **Start**
+3. Install **Greenery S Farm Bridge**
+4. **Configuration** tab → set **Farm name** (e.g. `Smith Farm`) → **Save**
+5. Press **Start**
+
+**Set Farm name before the first start.** It names the device and decides every
+entity ID (`Smith Farm` → `sensor.smith_farm_cultivation_ph`). Changing it after
+entities exist does not rename their IDs, and bringing the IDs back in line
+breaks every automation that uses them — see **Farm name** in
+`greenery-bridge/DOCS.md`. Left at the default `Greenery S Farm`, everything
+behaves exactly as it did before the option existed.
+
+**Any name other than the default:** render this farm's copies of the
+automations and dashboards, and paste *those* in steps 4–6, never the repo
+originals:
+
+```
+python tools/render-farm-yaml.py "Smith Farm"
+```
+
+The originals name `greenery_s_farm_*` entities, which do not exist on a farm
+with another name — and an automation whose trigger entity does not exist never
+fires and never errors.
 
 That is usually all of it. If the Mosquitto broker add-on is installed and
 running, the bridge takes the broker address and credentials from Home
@@ -158,6 +179,7 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
+| `tools/render-farm-yaml.py` | Writes a farm's own copy of every automation and dashboard, for any farm name other than the default |
 | `greenery-bridge/` | **Home Assistant add-on** — the best way to run this |
 | `repository.yaml` | Makes this repo installable as an HA add-on repository |
 | `INSTALL-FARM-BRIDGE.bat` | One-click Windows installer, if HA OS is not an option |

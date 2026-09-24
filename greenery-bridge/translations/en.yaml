@@ -1,0 +1,35 @@
+# Labels for the Configuration tab. Without this file Supervisor shows the raw
+# option keys.
+configuration:
+  farm_name:
+    name: Farm name
+    description: >-
+      Names this farm in Home Assistant and in its alerts, so one person
+      watching several farms can tell them apart. Set it BEFORE the first
+      start: it decides the entity IDs (e.g. "Smith Farm" gives
+      sensor.smith_farm_cultivation_ph), and changing it later does not
+      rename existing IDs. Also set the Farm Name helper in Home Assistant to
+      the same value.
+  farm_host:
+    name: Farm controller IP
+    description: The Farmhand hub controller's address on the farm network.
+  farm_port:
+    name: Farm controller port
+    description: Local Farmhand port. 3001 on a stock Greenery S.
+  log_level:
+    name: Log level
+    description: Raise to debug when troubleshooting.
+  mqtt_host:
+    name: MQTT broker host (override)
+    description: >-
+      Leave blank to use the Mosquitto app automatically. Fill in only for a
+      broker outside Home Assistant.
+  mqtt_port:
+    name: MQTT broker port (override)
+    description: 0 or blank means 1883.
+  mqtt_user:
+    name: MQTT username (override)
+    description: Only for a broker outside Home Assistant.
+  mqtt_password:
+    name: MQTT password (override)
+    description: Only for a broker outside Home Assistant.

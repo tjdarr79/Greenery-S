@@ -35,12 +35,13 @@ REQUIRED = [
     "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
+    "tools/render-farm-yaml.py",
     "INSTALL-FARM-BRIDGE.bat", "UNINSTALL-FARM-BRIDGE.bat",
     "repository.yaml",
     "greenery-bridge/config.yaml", "greenery-bridge/Dockerfile",
     "greenery-bridge/run.sh", "greenery-bridge/farm_bridge.py",
     "greenery-bridge/requirements.txt", "greenery-bridge/DOCS.md",
-    "greenery-bridge/CHANGELOG.md",
+    "greenery-bridge/CHANGELOG.md", "greenery-bridge/translations/en.yaml",
     "install/Install-FarmBridge.ps1", "install/Uninstall-FarmBridge.ps1",
     "install/README.md",
 ]
@@ -85,6 +86,10 @@ MARKERS = {
         ("MODULE_STALE_SECONDS", "5-minute staleness definition"),
         ("publish_module_states", "module offline publishing"),
         ("publish_module_discovery", "module offline discovery"),
+        ('os.environ.get("FARM_NAME")', "farm name read from the environment"),
+        ('LEGACY_FARM_NAME = "Greenery S Farm"', "unset farm name keeps today's device"),
+        ('"name": FARM_NAME,', "device named after the farm"),
+        ('"device": DEVICE_INFO,', "one shared device block"),
     ],
     "farm-alerts-script.yaml": [
         ("notify.send_message", "durable notify ENTITY path"),
@@ -109,10 +114,26 @@ MARKERS = {
         ("bashio::services mqtt", "auto MQTT credentials from Supervisor"),
         ("No MQTT broker found", "clear failure message"),
         ("FARM_SSE_URL", "farm endpoint exported"),
+        ("export FARM_NAME=\"$(bashio::config 'farm_name')\"", "farm name passed to the bridge"),
+        ("FARM_CONTROL_URL", "Task Mode endpoint follows farm_host"),
     ],
     "greenery-bridge/config.yaml": [
         ("mqtt:want", "MQTT service declared"),
         ("aarch64", "HA Green architecture"),
+        ("farm_name: Greenery S Farm", "legacy default - upgrades are not renamed"),
+        ("farm_name: str(1,)", "farm name can never be blank"),
+    ],
+    "greenery-bridge/translations/en.yaml": [
+        ("farm_name:", "farm name is a labelled field"),
+    ],
+    "greenery-bridge/DOCS.md": [
+        ("`farm_name`", "farm name documented"),
+        ("before the first start", "set-once instruction"),
+        ("render-farm-yaml.py", "per-farm YAML step documented"),
+    ],
+    "tools/render-farm-yaml.py": [
+        ("ENTITY_REF.subn", "entity IDs rewritten"),
+        ("old entity IDs survived", "self-check of its own output"),
     ],
     "install/Install-FarmBridge.ps1": [
         ("Greenery S Farm Bridge", "scheduled task name"),
@@ -182,7 +203,10 @@ def main():
             check("notify.mobile_app" not in t, f"{p.name} has no hardcoded phone")
 
     print("\n--- YAML parses ---")
-    for p in sorted(root.glob("*.yaml")) + sorted(adir.glob("*.yaml") if adir.is_dir() else []):
+    bdir = root / "greenery-bridge"
+    for p in (sorted(root.glob("*.yaml"))
+              + sorted(adir.glob("*.yaml") if adir.is_dir() else [])
+              + sorted(bdir.glob("*.yaml")) + sorted(bdir.glob("translations/*.yaml"))):
         try:
             yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))
             check(True, p.relative_to(root).as_posix())
@@ -190,7 +214,8 @@ def main():
             check(False, p.relative_to(root).as_posix(), str(e)[:70])
 
     print("\n--- Python parses ---")
-    for rel in ["farm_bridge.py", "tools/dump-relay.py", "tools/discover-farmhand-api.py"]:
+    for rel in ["farm_bridge.py", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
+                "tools/render-farm-yaml.py"]:
         p = root / rel
         if not p.is_file():
             check(False, f"{rel} (missing)")
@@ -212,11 +237,28 @@ def main():
     else:
         check(False, "both copies of farm_bridge.py present")
 
+    print("\n--- Farm slug identical in bridge and render tool ---")
+    # The render tool predicts the entity IDs the bridge's device name produces.
+    # If the two slug functions disagree, rendered automations name entities
+    # that do not exist - and a trigger on a missing entity never fires.
+    bodies = []
+    for rel in ["farm_bridge.py", "tools/render-farm-yaml.py"]:
+        p = root / rel
+        try:
+            fn = next(n for n in ast.walk(ast.parse(p.read_text(encoding="utf-8")))
+                      if isinstance(n, ast.FunctionDef) and n.name == "farm_slug")
+            bodies.append(ast.dump(ast.Module(body=fn.body[1:], type_ignores=[])))
+        except (OSError, SyntaxError, StopIteration):
+            bodies.append(None)
+    check(None not in bodies and bodies[0] == bodies[1],
+          "farm_slug() matches in farm_bridge.py and tools/render-farm-yaml.py",
+          "they have DRIFTED - rendered YAML would reference the wrong entity IDs")
+
     print("\n--- Size sanity ---")
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 721, f"farm_bridge.py is {n} lines (expect ~741)",
+        check(n >= 770, f"farm_bridge.py is {n} lines (expect ~790)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():

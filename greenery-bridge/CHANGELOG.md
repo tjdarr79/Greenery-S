@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.0
+
+Multi-farm identity. Safe to upgrade: an existing install keeps its device name
+and every entity ID.
+
+- New **Farm name** option. It names the Home Assistant device and decides the
+  entity IDs of a fresh install (`Smith Farm` → `sensor.smith_farm_*`). It
+  defaults to `Greenery S Farm`, the name every install already had. **Set it
+  before the first start** — see DOCS.md, *Farm name*.
+- `tools/render-farm-yaml.py` writes a farm's own copy of the automations and
+  dashboards for any name other than the default.
+- Configuration tab fields now have labels and descriptions.
+- Task Mode buttons now send to the configured `farm_host`/`farm_port`.
+  Previously they always used `192.168.200.200`, so a farm on another address
+  had working sensors but buttons that could not reach the controller.
+
 ## 1.0.0
 
 First release.

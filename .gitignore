@@ -1,3 +1,6 @@
 farm-bridge.env
 __pycache__/
 *.pyc
+
+# Output of tools/render-farm-yaml.py - per-farm copies, never committed
+rendered/
