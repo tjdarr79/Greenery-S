@@ -8,8 +8,10 @@ No farmhand cloud subscription is needed for any of it.
 
 ## Install
 
-1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add `https://github.com/tjdarr79/Greenery-S`
+1. **Settings → Apps** (Add-ons in older releases) **→ Store → ⋮ → Repositories**
+2. Add the repository for your channel — see [Release channel](#release-channel):
+   - customer farm: `https://github.com/tjdarr79/Greenery-S#stable`
+   - 3 Corners Farm (development): `https://github.com/tjdarr79/Greenery-S`
 3. Install **Greenery S Farm Bridge**
 4. **Configuration** tab → set **Farm name** → **Save**. Do this *before* the
    first start — see [Farm name](#farm-name) below.
@@ -107,6 +109,41 @@ command for the name you configured.
 > If a rename is unavoidable: re-render the YAML with the new name, re-paste
 > every automation and dashboard, set the Farm Name helper to match, and accept
 > that history starts over at the new ID.
+
+## Release channel
+
+Customer farms install from the `stable` branch; 3 Corners Farm installs from
+`main` and proves every change before it reaches `stable`. The branch is
+chosen by the `#stable` on the end of the repository URL.
+
+[One-click add, stable channel](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftjdarr79%2FGreenery-S%23stable)
+
+**Confirmed from source — not yet on a live install.** Supervisor accepts
+`<url>#<branch>` for an app repository: it validates against
+`^(?P<url>[^#\s]+)(?:#(?P<branch>[\w\-./]+))?$` and clones that branch
+(`supervisor/validate.py` `RE_REPOSITORY`, `supervisor/store/git.py`). The
+one-click link hands `repository_url` to the Apps store, which adds it exactly
+as given, so `#stable` survives (`%23` in the link). Neither has yet been
+exercised on real hardware from this repository.
+
+**At the first customer install, confirm it** before relying on it:
+
+1. Settings → Apps → Store → ⋮ → Repositories lists the URL **with** `#stable`.
+2. The app's version matches `version:` in `greenery-bridge/config.yaml` on the
+   `stable` branch on GitHub — not the one on `main`, whenever they differ.
+
+**If either check fails:** remove the repository before installing the app
+(Supervisor refuses to remove one while its app is installed) and fall back to
+a separate repository that holds only releases — for example
+`tjdarr79/Greenery-S-stable`, updated by pushing `stable` to it. Customers add
+that URL instead, with no `#`.
+
+**Choose once.** Moving an installed farm to the other channel means
+uninstalling and reinstalling the app.
+
+**Updating a customer farm:** leave **Create backup** on in the update dialog.
+Supervisor cannot install an older version, so that backup is the fastest way
+back from a bad release.
 
 ## Checking it worked
 

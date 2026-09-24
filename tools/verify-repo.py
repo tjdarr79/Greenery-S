@@ -30,6 +30,7 @@ except ImportError:
 
 REQUIRED = [
     "README.md", "LICENSE", "WINDOWS-INSTALL.md", "requirements.txt",
+    "CONTRIBUTING.md",
     "farm_bridge.py", "farm-bridge.env.example", "farm-bridge.service",
     "farm-alerts-script.yaml", "dashboard-controls.yaml",
     "watchdog-helpers.yaml",
@@ -114,6 +115,13 @@ MARKERS = {
         ("Coverage against farmhand", "built-in alert parity table"),
         ("run it on Home Assistant itself", "add-on install path"),
         ("MQTT \u2192 Greenery S Farm", "where entities actually live"),
+        ("Greenery-S#stable", "customer farms told to use the stable branch"),
+        ("Never commit to or work from `stable`", "developers told to stay off stable"),
+    ],
+    "CONTRIBUTING.md": [
+        ("git merge --ff-only main", "stable only fast-forwards to main"),
+        ("Never commit to `stable`", "stable is release-only"),
+        ("CHANGELOG", "every release carries a changelog entry"),
     ],
     "greenery-bridge/run.sh": [
         ("bashio::services mqtt", "auto MQTT credentials from Supervisor"),
@@ -135,6 +143,8 @@ MARKERS = {
         ("`farm_name`", "farm name documented"),
         ("before the first start", "set-once instruction"),
         ("render-farm-yaml.py", "per-farm YAML step documented"),
+        ("Greenery-S#stable", "customer install URL"),
+        ("If either check fails", "fallback if branch selection does not work"),
     ],
     "tools/render-farm-yaml.py": [
         ("ENTITY_REF.subn", "entity IDs rewritten"),
@@ -252,6 +262,21 @@ def main():
               "they have DRIFTED - copy the root one over it")
     else:
         check(False, "both copies of farm_bridge.py present")
+
+    print("\n--- Release metadata in sync ---")
+    # Supervisor offers an update only when config.yaml's version rises, and
+    # the CHANGELOG is what the update dialog shows. A version with no entry,
+    # or an entry with no version bump, is a release nobody can read or get.
+    cfg, log_md = bdir / "config.yaml", bdir / "CHANGELOG.md"
+    try:
+        version = str(yaml.safe_load(cfg.read_text(encoding="utf-8"))["version"])
+        top = next((ln[3:].strip() for ln in log_md.read_text(encoding="utf-8").splitlines()
+                    if ln.startswith("## ")), None)
+        check(version == top,
+              f"config.yaml version {version} is the top CHANGELOG entry",
+              f"CHANGELOG starts at {top}")
+    except (OSError, KeyError, TypeError, yaml.YAMLError) as e:
+        check(False, "config.yaml version readable", str(e)[:70])
 
     print("\n--- Farm slug identical in bridge and render tool ---")
     # The render tool predicts the entity IDs the bridge's device name produces.

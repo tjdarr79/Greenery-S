@@ -28,13 +28,32 @@ dashboard and any paid support tier for basic monitoring.
 
 Order matters. Each step verifies before the next depends on it.
 
+### Before anything: which repository URL
+
+| This install is… | Add this repository | Gets |
+|---|---|---|
+| **A customer farm** | `https://github.com/tjdarr79/Greenery-S#stable` | Releases only — code already proven on 3 Corners Farm |
+| **3 Corners Farm** (the dev farm) | `https://github.com/tjdarr79/Greenery-S` | Every change on `main`, first |
+
+Customer farms: [add the stable repository with one click](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftjdarr79%2FGreenery-S%23stable) — or paste the
+URL by hand, `#stable` included. Without `#stable` the farm tracks `main` and is
+offered every development change.
+
+Get it right at the first install. Supervisor refuses to remove a repository
+while an app from it is installed, so moving a farm between channels later
+means uninstalling and reinstalling the app. How branch selection was confirmed
+is under **Release channel** in `greenery-bridge/DOCS.md`.
+
+**Developing?** Never commit to or work from `stable` — it is what customers
+run. Work on `main`; releases follow `CONTRIBUTING.md`.
+
 ### Best path: run it on Home Assistant itself (no PC needed)
 
 If you have Home Assistant OS — HA Green, Yellow, a Pi, or an x86 box — install
 the bridge as an **add-on** and skip the separate computer entirely.
 
-1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add `https://github.com/tjdarr79/Greenery-S`
+1. **Settings → Apps** (Add-ons in older releases) **→ Store → ⋮ → Repositories**
+2. Add the URL from the table above — `#stable` for a customer farm
 3. Install **Greenery S Farm Bridge**
 4. **Configuration** tab → set **Farm name** (e.g. `Smith Farm`) → **Save**
 5. Press **Start**
@@ -194,6 +213,7 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 | `tools/render-farm-yaml.py` | Writes a farm's own copy of every automation and dashboard, for any farm name other than the default |
 | `greenery-bridge/` | **Home Assistant add-on** — the best way to run this |
 | `repository.yaml` | Makes this repo installable as an HA add-on repository |
+| `CONTRIBUTING.md` | Branches and releases: `main` for development, `stable` for customer farms |
 | `INSTALL-FARM-BRIDGE.bat` | One-click Windows installer, if HA OS is not an option |
 | `UNINSTALL-FARM-BRIDGE.bat` | Removes the startup task; keeps your settings |
 | `install/` | Installer scripts and what they do |
