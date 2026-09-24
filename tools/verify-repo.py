@@ -29,7 +29,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 REQUIRED = [
-    "README.md", "LICENSE", "WINDOWS-INSTALL.md", "requirements.txt",
+    "README.md", "LICENSE", "requirements.txt",
     "CONTRIBUTING.md",
     "farm_bridge.py", "farm-bridge.env.example", "farm-bridge.service",
     "farm-alerts-script.yaml", "dashboard-controls.yaml",
@@ -37,14 +37,19 @@ REQUIRED = [
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "tools/render-farm-yaml.py",
-    "INSTALL-FARM-BRIDGE.bat", "UNINSTALL-FARM-BRIDGE.bat",
     "repository.yaml",
     "greenery-bridge/config.yaml", "greenery-bridge/Dockerfile",
     "greenery-bridge/run.sh", "greenery-bridge/farm_bridge.py",
     "greenery-bridge/requirements.txt", "greenery-bridge/DOCS.md",
     "greenery-bridge/CHANGELOG.md", "greenery-bridge/translations/en.yaml",
-    "install/Install-FarmBridge.ps1", "install/Uninstall-FarmBridge.ps1",
-    "install/README.md",
+    # Retired Windows path, kept for reference and emergency fallback
+    "legacy/windows-installer/README.md",
+    "legacy/windows-installer/INSTALL-FARM-BRIDGE.bat",
+    "legacy/windows-installer/UNINSTALL-FARM-BRIDGE.bat",
+    "legacy/windows-installer/WINDOWS-INSTALL.md",
+    "legacy/windows-installer/install/Install-FarmBridge.ps1",
+    "legacy/windows-installer/install/Uninstall-FarmBridge.ps1",
+    "legacy/windows-installer/install/README.md",
 ]
 
 AUTOMATIONS = [
@@ -68,6 +73,10 @@ SHOULD_NOT_EXIST = [
     ("relay_patch.py", "superseded - farm_bridge.py already contains it"),
     ("_READ-ME-FIRST.txt", "packaging note, not part of the repo"),
     ("greenery-alarm-fix.bundle", "transfer artifact, not part of the repo"),
+    ("INSTALL-FARM-BRIDGE.bat", "retired to legacy/windows-installer/"),
+    ("UNINSTALL-FARM-BRIDGE.bat", "retired to legacy/windows-installer/"),
+    ("install", "retired to legacy/windows-installer/install/"),
+    ("WINDOWS-INSTALL.md", "retired to legacy/windows-installer/"),
 ]
 
 # Content that proves each feature actually landed
@@ -150,13 +159,17 @@ MARKERS = {
         ("ENTITY_REF.subn", "entity IDs rewritten"),
         ("old entity IDs survived", "self-check of its own output"),
     ],
-    "install/Install-FarmBridge.ps1": [
+    "legacy/windows-installer/install/Install-FarmBridge.ps1": [
         ("Greenery S Farm Bridge", "scheduled task name"),
         ("Register-ScheduledTask", "startup task creation"),
         ("AsSecureString", "password not echoed"),
         ("SetAccessRuleProtection", "env file locked down"),
         ("Test-TcpPort", "connectivity self-test"),
         ("homeassistant", "rejects the mDNS name"),
+        ('Join-Path $PSScriptRoot "..\\..\\.."', "finds the bridge files at the repo root"),
+    ],
+    "legacy/windows-installer/README.md": [
+        ("Do not use this for a new install", "marked as retired"),
     ],
     "dashboard-controls.yaml": [
         ("confirmation:", "confirmation guard"),
@@ -304,7 +317,7 @@ def main():
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 892, f"README.md is {n} lines (expect ~912)",
+        check(n >= 927, f"README.md is {n} lines (expect ~947)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

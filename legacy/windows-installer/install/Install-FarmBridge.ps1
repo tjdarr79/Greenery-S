@@ -94,7 +94,9 @@ Write-Host ""
 Write-Host "   Takes about 5 minutes. Safe to run again if anything fails." -ForegroundColor Gray
 Write-Host ""
 
-$SourceDir = Split-Path -Parent $PSScriptRoot
+# The bridge files live at the repo root, three levels up from
+# legacy\windows-installer\install\ since this installer was retired.
+$SourceDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 
 # --- Step 1: sanity -------------------------------------------------------
 Write-Step "Checking the installer files"

@@ -47,10 +47,10 @@ is under **Release channel** in `greenery-bridge/DOCS.md`.
 **Developing?** Never commit to or work from `stable` — it is what customers
 run. Work on `main`; releases follow `CONTRIBUTING.md`.
 
-### Best path: run it on Home Assistant itself (no PC needed)
+### 1. Install the bridge — run it on Home Assistant itself
 
-If you have Home Assistant OS — HA Green, Yellow, a Pi, or an x86 box — install
-the bridge as an **add-on** and skip the separate computer entirely.
+The bridge runs as a Home Assistant **app** on Home Assistant OS — HA Green,
+Yellow, a Pi, or an x86 box. No separate computer.
 
 1. **Settings → Apps** (Add-ons in older releases) **→ Store → ⋮ → Repositories**
 2. Add the URL from the table above — `#stable` for a customer farm
@@ -65,22 +65,9 @@ breaks every automation that uses them — see **Farm name** in
 `greenery-bridge/DOCS.md`. Left at the default `Greenery S Farm`, everything
 behaves exactly as it did before the option existed.
 
-**Any name other than the default:** render this farm's copies of the
-automations and dashboards, and paste *those* in steps 4–6, never the repo
-originals:
-
-```
-python tools/render-farm-yaml.py "Smith Farm"
-```
-
-The originals name `greenery_s_farm_*` entities, which do not exist on a farm
-with another name — and an automation whose trigger entity does not exist never
-fires and never errors.
-
-That is usually all of it. If the Mosquitto broker add-on is installed and
-running, the bridge takes the broker address and credentials from Home
-Assistant automatically — **there is nothing to type**. No IP, no username, no
-password.
+If the Mosquitto broker app is installed and running, the bridge takes the
+broker address and credentials from Home Assistant automatically — **there is
+nothing to type**. No IP, no username, no password.
 
 That one property removes the single most failure-prone step in this whole
 setup: the `homeassistant.local` trap and wrong MQTT credentials, which between
@@ -92,26 +79,21 @@ repository moves forward.
 
 See `greenery-bridge/DOCS.md` for options and troubleshooting.
 
-Then come back and do steps 3 onward — the alerting is pasted into the HA UI
-and is not part of the add-on.
+No Home Assistant OS at the site? See **Running the bridge outside Home
+Assistant** further down. The old Windows installer is retired to
+`legacy/windows-installer/` and is not for new installs.
 
-### If Home Assistant is not on your network: the Windows installer
+### 2. Verify the device, then prepare this farm's YAML
 
-If the farm PC runs Windows, skip the manual steps below. Extract the repo and
-**double-click `INSTALL-FARM-BRIDGE.bat`**. It installs Python if needed, copies
-the bridge to `C:\Farm`, asks for your Home Assistant MQTT details, tests the
-connections, and creates a startup task so it survives reboots.
+**Settings → Devices & Services → MQTT → your farm name.** You should see ~54
+entities. The device lives *inside* the MQTT card — it is not listed at the top
+level of Devices & Services, which is easy to miss. The app's **Log** tab shows
+the entity ID prefix this farm got.
 
-Then come back and do steps 3 onward — the Home Assistant side is pasted into
-the HA UI and cannot be installed from the PC.
+Nothing below works until entities are appearing.
 
-See `install/README.md` for exactly what it does. It is safe to re-run and
-doubles as the upgrade path.
-
-The manual steps below remain for non-Windows hosts and for anyone who wants to
-see what the installer is doing.
-
-### 0. Verify the clone
+Then, on a computer with a clone of this repository — checked out at the same
+branch the farm tracks:
 
 ```
 python tools/verify-repo.py
@@ -121,24 +103,18 @@ Read-only. Confirms every file is present, each feature's code actually landed,
 all YAML parses, and no stale files survived. If it does not print
 `ALL CHECKS PASSED`, fix that before configuring anything.
 
-### 1. Prerequisites
+**Any Farm name other than the default:** render this farm's copies of the
+automations and dashboards, and paste *those* in steps 4–6, never the repo
+originals:
 
-- Python 3.8+ on a machine that stays on and can reach the farm network
-- Home Assistant with the **Mosquitto broker** add-on installed and running
-- `pip install -r requirements.txt`
+```
+python tools/render-farm-yaml.py "Smith Farm"
+```
 
-### 2. Configure and start the bridge
-
-Copy `farm-bridge.env.example` to `farm-bridge.env`, fill in the MQTT host and
-credentials, then run `farm_bridge.py`. See **Install** and **Running** below,
-and **Deploying unattended** for systemd / Task Scheduler.
-
-**Verify before continuing:** Settings → Devices & Services → **MQTT** →
-**Greenery S Farm**. You should see ~48 entities. Note that the device lives
-*inside* the MQTT card — it is not listed at the top level of Devices &
-Services, which is easy to miss.
-
-Nothing below works until entities are appearing.
+The originals name `greenery_s_farm_*` entities, which do not exist on a farm
+with another name — and an automation whose trigger entity does not exist never
+fires and never errors. The tool tells you how to confirm its prefix against
+Home Assistant before you paste.
 
 ### 3. Install the alert script — and test it
 
@@ -211,13 +187,10 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
 | `tools/render-farm-yaml.py` | Writes a farm's own copy of every automation and dashboard, for any farm name other than the default |
-| `greenery-bridge/` | **Home Assistant add-on** — the best way to run this |
+| `greenery-bridge/` | **The Home Assistant app** — how the bridge is installed |
 | `repository.yaml` | Makes this repo installable as an HA add-on repository |
 | `CONTRIBUTING.md` | Branches and releases: `main` for development, `stable` for customer farms |
-| `INSTALL-FARM-BRIDGE.bat` | One-click Windows installer, if HA OS is not an option |
-| `UNINSTALL-FARM-BRIDGE.bat` | Removes the startup task; keeps your settings |
-| `install/` | Installer scripts and what they do |
-| `WINDOWS-INSTALL.md` | Manual Windows setup, if you prefer doing it by hand |
+| `legacy/windows-installer/` | **Retired** Windows installer and manual Windows guide. Reference and emergency fallback only |
 
 Everything under `tools/` is optional and read-only. The bridge does not use
 them.
@@ -259,7 +232,15 @@ The SSE stream aborts ~60 seconds server-side (confirmed via DevTools). The
 bridge treats this as expected behavior and reconnects automatically — this
 is not an error condition.
 
-## Requirements
+## Running the bridge outside Home Assistant
+
+Only for a site where Home Assistant OS cannot host the app — for example HA
+Container, or a broker on another machine. Everything in **New install** from
+step 2 onward still applies; only step 1 is replaced by what follows. Windows
+hosts: the retired installer in `legacy/windows-installer/` still works, but is
+unmaintained.
+
+### Requirements
 
 - Python 3.8+
 - Network access to both `192.168.200.200:3001` (Farmhand local app) and your
@@ -267,7 +248,7 @@ is not an error condition.
 - An MQTT broker with a valid login — see Setup Gotchas below, this tripped
   up initial setup
 
-## Install
+### Install
 
 ```bash
 pip install -r requirements.txt --break-system-packages   # Linux/Mac
@@ -278,7 +259,7 @@ Copy `farm-bridge.env.example` to `farm-bridge.env` and fill in real MQTT
 credentials. **Never commit `farm-bridge.env`** — it's gitignored for this
 reason.
 
-## Running
+### Running
 
 **Manual test first, always** — confirm it works before deploying unattended:
 
@@ -305,9 +286,9 @@ Then check Home Assistant: **Settings → Devices & Services → MQTT
 integration → Devices → "Greenery S Farm"**. Confirm all 12 entities show
 live numeric values, not "unknown."
 
-## Deploying unattended
+### Deploying unattended
 
-### Linux (systemd)
+#### Linux (systemd)
 
 ```bash
 sudo cp farm_bridge.py farm-bridge.env /opt/farm-bridge/
@@ -315,7 +296,7 @@ sudo cp farm-bridge.service /etc/systemd/system/
 sudo systemctl enable --now farm-bridge
 ```
 
-### Windows (Task Scheduler)
+#### Windows (Task Scheduler)
 
 Task Scheduler does not inherit interactive-session environment variables —
 set them machine-wide first, from an elevated (Administrator) CMD window:
