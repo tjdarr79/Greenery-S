@@ -97,6 +97,11 @@ MARKERS = {
         ("persistent_notification.create", "audit-trail fallback"),
         ("input_boolean.farm_alert_missed", "missed-alert recording"),
         ("channel: alarm_stream", "Android critical payload"),
+        ("states('input_text.farm_name')", "farm name read for alert titles"),
+    ],
+    "watchdog-helpers.yaml": [
+        ("input_text.farm_name", "Farm Name helper documented"),
+        ("KNOWN ROUGH EDGE", "helper vs app option mismatch flagged"),
     ],
     "README.md": [
         ("New install", "fresh-install path"),
@@ -201,6 +206,17 @@ def main():
             t = p.read_text(encoding="utf-8", errors="replace")
             check("script.farm_alerts" in t, f"{p.name} routes via script")
             check("notify.mobile_app" not in t, f"{p.name} has no hardcoded phone")
+
+    print("\n--- Every alert title carries the farm name ---")
+    # Three delivery paths: persistent notification, notify entity, legacy
+    # critical service. One missed means one banner with no farm on it.
+    fa = root / "farm-alerts-script.yaml"
+    if fa.is_file():
+        t = fa.read_text(encoding="utf-8", errors="replace")
+        n = t.count('title: "{{ alert_title }}"')
+        check(n == 3, f"farm-alerts-script.yaml: {n}/3 delivery titles use alert_title",
+              "a notification path skips the farm-name prefix")
+        check('title: "{{ title }}"' not in t, "farm-alerts-script.yaml: no bare title left")
 
     print("\n--- YAML parses ---")
     bdir = root / "greenery-bridge"

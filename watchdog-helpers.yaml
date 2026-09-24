@@ -1,4 +1,27 @@
 # ---------------------------------------------------------------------------
+# FARM NAME - one per install, part of onboarding.
+#
+# Create it in the UI - Settings > Devices & Services > Helpers > + Create
+# Helper. No configuration.yaml edit needed.
+#
+#   Text      named exactly:  Farm Name             -> input_text.farm_name
+#
+# Then give it a value: open Farm Name from the Helpers list, type the farm's
+# name in its text box, press Enter. (Or Settings > Tools > Actions >
+# input_text.set_value.) Not Tools > States > Set state - that changes what
+# the UI shows, not the value the helper keeps.
+#
+# farm-alerts-script.yaml puts it in front of every alert title -
+# "Smith Farm: Water Temp High" - so whoever watches several farms knows
+# which one paged them without opening the app. Never created, or left
+# blank: titles go out with no prefix, exactly as before. Nothing fails.
+#
+# KNOWN ROUGH EDGE: this is separate from the bridge app's Farm name option,
+# and nothing keeps the two in step. Type the SAME name in both. If they
+# differ, alerts say one farm and the device and dashboards say another.
+# ---------------------------------------------------------------------------
+#
+# ---------------------------------------------------------------------------
 # HELPERS for the CloudGate watchdog.
 #
 # Create these in the UI - Settings > Devices & Services > Helpers > + Create

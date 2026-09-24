@@ -46,6 +46,17 @@ it on the device, on every entity's friendly name, and — through the Farm Name
 helper, see `README.md` — at the start of every alert title, so a phone banner
 says which farm paged them without opening the app.
 
+The alert-title prefix comes from the **Farm Name** helper
+(`input_text.farm_name`), not from this option — the alert script runs inside
+Home Assistant and cannot read the app's configuration. Create the helper and
+set its value once per install, as part of onboarding: see
+`watchdog-helpers.yaml`, and **New install** step 3 in `README.md`.
+
+> **Known rough edge:** the helper and `farm_name` are two separate settings,
+> and nothing keeps them in step. Type the same name in both. If they differ,
+> alerts carry one name and the device and dashboards another. If the helper
+> is never created or left blank, alerts simply have no prefix — nothing fails.
+
 It becomes the device name, and Home Assistant builds each entity ID from the
 device name the first time it sees the entity:
 

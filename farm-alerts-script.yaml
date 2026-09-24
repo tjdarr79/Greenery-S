@@ -84,6 +84,23 @@ fields:
 # point. So every step is placed after the steps that must not be lost.
 sequence:
 
+  # --- STEP 0: which farm is paging? ----------------------------------------
+  # Every title below starts with the Farm Name helper - "Smith Farm: Water
+  # Temp High" - so someone responsible for several farms knows which one
+  # paged them from the banner alone. Set up in watchdog-helpers.yaml.
+  #
+  # Cannot fail, so it is safe ahead of the audit trail: states() of a missing
+  # helper is "unknown", never an error. Missing, blank or unavailable all give
+  # no prefix - the title goes out exactly as it did before this existed.
+  #
+  # The missed-alert record in step 1b keeps the bare title on purpose:
+  # automation 15 replays it through this script, which adds the prefix then.
+  - variables:
+      alert_title: >-
+        {% set farm = states('input_text.farm_name') | trim %}
+        {{- farm ~ ': ' if farm not in ['', 'unknown', 'unavailable'] else '' -}}
+        {{ title }}
+
   # --- STEP 1: the audit trail. Cannot fail. --------------------------------
   # Visible under Settings -> Notifications. If a phone alert never arrives,
   # check here to distinguish "the automation never fired" from "the phone
@@ -91,7 +108,7 @@ sequence:
   - action: persistent_notification.create
     data:
       notification_id: "{{ notification_id | default('farm_alert', true) }}"
-      title: "{{ title }}"
+      title: "{{ alert_title }}"
       message: >-
         {{ message }} (logged {{ now().strftime('%Y-%m-%d %H:%M') }})
 
@@ -127,7 +144,7 @@ sequence:
     target:
       entity_id: notify.farm_phone          # <-- YOUR PHONE (durable entity)
     data:
-      title: "{{ title }}"
+      title: "{{ alert_title }}"
       message: "{{ message }}"
 
   # --- STEP 3: critical override. Best-effort, deliberately LAST. -----------
@@ -156,7 +173,7 @@ sequence:
       - action: notify.mobile_app_farm_phone   # <-- CONFIRM THIS NAME
         continue_on_error: true
         data:
-          title: "{{ title }}"
+          title: "{{ alert_title }}"
           message: "{{ message }}"
           data:
             ttl: 0

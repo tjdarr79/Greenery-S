@@ -123,7 +123,18 @@ Nothing below works until entities are appearing.
 
 ### 3. Install the alert script — and test it
 
-Settings → Automations & Scenes → **Scripts** → + Add Script → ⋮ →
+**First, the Farm Name helper** — once per install. Settings → Devices &
+Services → **Helpers** → + Create Helper → **Text**, named exactly
+`Farm Name` (→ `input_text.farm_name`). Open it and type the farm's name —
+**the same name as the app's Farm name option**. Nothing links the two, so a
+mismatch means alerts say one farm and the dashboards another. Details in
+`watchdog-helpers.yaml`.
+
+Every alert title starts with it: `Smith Farm: Water Temp High`. That is how
+someone responsible for several farms knows from the banner alone which one
+paged them. No helper, or a blank one, just means no prefix — nothing fails.
+
+Then: Settings → Automations & Scenes → **Scripts** → + Add Script → ⋮ →
 **Edit in YAML** → paste `farm-alerts-script.yaml` → Save.
 
 Change the notify target inside it to your own phone. Find yours at
@@ -132,6 +143,7 @@ Settings → Tools → Actions, or render
 Settings → Tools → Template.
 
 **Then run it: Scripts → Farm Alerts → ⋮ → Run.** Type any title and message.
+The phone's banner should read `<Farm Name>: <your title>`.
 
 If the phone does not buzz, stop here and fix it. Do not install the
 automations — they will all fail the same way. This single test is the step
@@ -172,7 +184,7 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 | `farm-bridge.service` | systemd unit (Linux) |
 | `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
 | `automations/01`–`20` | Alert automations, pasted into HA one at a time |
-| `watchdog-helpers.yaml` | Helper + Ping setup for the CloudGate watchdog |
+| `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard |
 | `farm-dashboard-mobile.yaml` | Phone dashboard |
 | `dashboard-controls.yaml` | Task Mode control card |

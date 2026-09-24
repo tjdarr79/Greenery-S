@@ -12,6 +12,9 @@ and every entity ID.
 - `tools/render-farm-yaml.py` writes a farm's own copy of the automations and
   dashboards for any name other than the default.
 - Configuration tab fields now have labels and descriptions.
+- Alert titles start with the farm's name (`Smith Farm: Water Temp High`), from
+  a new **Farm Name** helper. Re-paste `farm-alerts-script.yaml` and create the
+  helper to get it; without the helper, titles are unchanged.
 - Task Mode buttons now send to the configured `farm_host`/`farm_port`.
   Previously they always used `192.168.200.200`, so a farm on another address
   had working sensors but buttons that could not reach the controller.
