@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.0
+
+Pump switches, Task Mode only. Safe to upgrade: no existing entity ID changes.
+
+- Three new switches: **Cultivation Recirc Pump Switch**, **Left Send Pump
+  Switch**, **Right Send Pump Switch**. They show *unavailable* unless the farm
+  is in Task Mode, and the bridge refuses any command sent outside Task Mode.
+  Each press reports `CONFIRMED` or `NOT CONFIRMED` in **Farm Control Status**,
+  read back from the relay itself — farmhand's reply confirms nothing. See
+  DOCS.md, *Pump switches*.
+- `dashboard-controls.yaml` gains a **Pumps (Task Mode only)** card, every
+  tap confirmed. Re-paste it (or its rendered copy) to get it.
+- Commands left **retained** on the broker are now ignored and cleared, never
+  replayed on restart. The Task Mode buttons no longer hold up other MQTT
+  traffic while they verify, and two presses never run at once.
+- New option **Log farm-monitoring stream**, off by default. Investigation
+  only — logs farmhand's second event stream so its replies can be found.
+
 ## 1.1.0
 
 Multi-farm identity. Safe to upgrade: an existing install keeps its device name

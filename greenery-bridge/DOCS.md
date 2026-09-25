@@ -2,7 +2,8 @@
 
 Reads your Freight Farms Greenery S local Farmhand endpoint and publishes
 everything to Home Assistant over MQTT: sensors, all 32 relay channels, module
-health, and one-tap Task Mode controls.
+health, one-tap Task Mode controls, and pump switches that work only in Task
+Mode.
 
 No farmhand cloud subscription is needed for any of it.
 
@@ -29,6 +30,7 @@ Home Assistant automatically — there is nothing to type.
 | `farm_host` | `192.168.200.200` | The Farmhand hub controller's IP |
 | `farm_port` | `3001` | Local Farmhand port |
 | `log_level` | `info` | Raise to `debug` when troubleshooting |
+| `log_farm_monitoring` | `false` | Investigation only — see [Investigating /farm-monitoring](#investigating-farm-monitoring) |
 | `mqtt_host` | *(blank)* | Only for an external broker |
 | `mqtt_port` | `0` | Blank/0 means 1883 |
 | `mqtt_user` | *(blank)* | Only for an external broker |
@@ -150,12 +152,62 @@ back from a bad release.
 **Settings → Devices & Services → MQTT → your farm name** (`Greenery S Farm`
 unless you changed it).
 
-You should see roughly 54 entities. Note the device lives *inside* the MQTT
+You should see roughly 57 entities. Note the device lives *inside* the MQTT
 card — it is not listed at the top level of Devices & Services, which is easy
 to miss.
 
 The add-on **Log** tab should show `Farm name: …` with the entity ID prefix,
 then `MQTT connected`, then a steady stream of published states.
+
+## Pump switches (Task Mode only)
+
+Three switches turn single pumps on and off from Home Assistant:
+
+| Switch | Relay channel |
+|---|---|
+| Cultivation Recirc Pump Switch | 1 |
+| Left Send Pump Switch | 2 |
+| Right Send Pump Switch | 3 |
+
+**They only work in Task Mode.** Outside it they show *unavailable*, and a
+command sent to one anyway — by an automation, or published by hand — is
+refused: **Farm Control Status** reads `REFUSED - farm not in Task Mode` and
+nothing reaches the farm. The bridge checks Task Mode again at the moment of
+every command, from output-board data no older than 30 seconds.
+
+**farmhand's reply proves nothing.** It answers `Control message received!` to
+every command, including ones it ignores. So the bridge watches the relay's own
+state in the farm's data stream and reports `CONFIRMED in 2.1s`, or
+`NOT CONFIRMED - relay still reports OFF` after 10 seconds.
+
+A switch left on keeps its pump running until someone turns it off. In Task
+Mode farmhand's recipe is suspended, and with it its automatic protections —
+stay with the farm while a pump you started is running.
+
+Nothing is sent when the app starts or restarts, and a command left
+*retained* on the broker is ignored and cleared rather than replayed.
+
+**Adding a channel** is a code change, in this order: switch it on and off from
+the farmhand UI in Task Mode and watch the equipment respond; then add the
+channel number to `MANUAL_CONTROL_CHANNELS` in `farm_bridge.py`; then, in Task
+Mode, switch it on and off from Home Assistant, watch the equipment, and see
+`CONFIRMED` both ways before relying on it. Never channel 23 — the bridge
+refuses to start with it listed.
+
+The dashboard card is at the end of `dashboard-controls.yaml`; every tap asks
+for confirmation first.
+
+## Investigating /farm-monitoring
+
+`log_farm_monitoring` is for finding out where farmhand answers read-only
+commands such as `get_current_mode`. When on, the app logs the first 20 events
+of the farm's second data stream, `/farm-monitoring`, after each start, then
+disconnects. It sends nothing to the farm and publishes nothing.
+
+1. Turn it on, **Save**, restart the app.
+2. Within ten minutes, make farmhand answer something — open the farmhand UI,
+   or send `{"command":"get_current_mode"}` to `/farm-control`.
+3. Read the **Log** tab for `farm-monitoring event` lines, then turn it off.
 
 ## Then set up the alerts
 

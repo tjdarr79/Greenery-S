@@ -1,6 +1,6 @@
 ---
 name: Greenery S Farm Bridge
-version: "1.1.0"
+version: "1.2.0"
 slug: greenery_bridge
 description: >-
   Publishes Freight Farms Greenery S sensors, relay states and Task Mode
@@ -32,6 +32,7 @@ options:
   farm_host: 192.168.200.200
   farm_port: 3001
   log_level: info
+  log_farm_monitoring: false
   mqtt_host: ""
   mqtt_port: 0
   mqtt_user: ""
@@ -42,6 +43,7 @@ schema:
   farm_host: str
   farm_port: port
   log_level: list(debug|info|warning|error)
+  log_farm_monitoring: bool
   mqtt_host: str?
   mqtt_port: int(0,65535)?
   mqtt_user: str?
