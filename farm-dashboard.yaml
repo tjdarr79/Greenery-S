@@ -12,6 +12,28 @@ views:
           # is showing stale/last-known data, not live readings.
           # -----------------------------------------------------------------
           - type: entity
+            card_mod: &card_style
+              # Requires card-mod (HACS). Without it these lines are ignored and the
+              # cards render with stock styling - nothing breaks.
+              # Title size appears twice below (both copies of 40px) - change both.
+              # This block is defined once and reused by every card in the file.
+              style:
+                .: |
+                  ha-card {
+                    border: 2px solid var(--secondary-text-color) !important;
+                    border-radius: 12px !important;
+                  }
+                  .card-header {
+                    font-weight: 700 !important;
+                    font-size: 40px !important;
+                    line-height: 1.2 !important;
+                  }
+                ha-card$: |
+                  .card-header {
+                    font-weight: 700 !important;
+                    font-size: 40px !important;
+                    line-height: 1.2 !important;
+                  }
             entity: binary_sensor.greenery_s_farm_farm_bridge_status
             name: Bridge Status
             icon: mdi:connection
@@ -23,6 +45,7 @@ views:
             cards:
               # PANEL 1: ENVIRONMENTAL
               - type: entities
+                card_mod: *card_style
                 title: Environmental
                 icon: mdi:thermometer
                 show_header_toggle: false
@@ -36,6 +59,7 @@ views:
 
               # PANEL 2: NURSERY
               - type: entities
+                card_mod: *card_style
                 title: Nursery
                 icon: mdi:seed
                 show_header_toggle: false
@@ -51,6 +75,7 @@ views:
 
               # PANEL 3: CULTIVATION
               - type: entities
+                card_mod: *card_style
                 title: Cultivation
                 icon: mdi:water
                 show_header_toggle: false
@@ -77,6 +102,7 @@ views:
           - type: horizontal-stack
             cards:
               - type: history-graph
+                card_mod: *card_style
                 title: Environmental Trends (24h)
                 hours_to_show: 24
                 refresh_interval: 60
@@ -89,6 +115,7 @@ views:
                     name: Air Temp
 
               - type: history-graph
+                card_mod: *card_style
                 title: Nursery Trends (24h)
                 hours_to_show: 24
                 refresh_interval: 60
@@ -101,6 +128,7 @@ views:
                     name: Water Temp
 
               - type: history-graph
+                card_mod: *card_style
                 title: Cultivation Trends (24h)
                 hours_to_show: 24
                 refresh_interval: 60
@@ -118,6 +146,7 @@ views:
           # autofill valve or dosing pump failure over time.
           # -----------------------------------------------------------------
           - type: history-graph
+            card_mod: *card_style
             title: Tank Depth Trends (24h)
             hours_to_show: 24
             refresh_interval: 60

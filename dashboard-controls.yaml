@@ -20,6 +20,28 @@
 type: vertical-stack
 cards:
   - type: button
+    card_mod: &card_style
+      # Requires card-mod (HACS). Without it these lines are ignored and the
+      # cards render with stock styling - nothing breaks.
+      # Title size appears twice below (both copies of 40px) - change both.
+      # This block is defined once and reused by every card in the file.
+      style:
+        .: |
+          ha-card {
+            border: 2px solid var(--secondary-text-color) !important;
+            border-radius: 12px !important;
+          }
+          .card-header {
+            font-weight: 700 !important;
+            font-size: 40px !important;
+            line-height: 1.2 !important;
+          }
+        ha-card$: |
+          .card-header {
+            font-weight: 700 !important;
+            font-size: 40px !important;
+            line-height: 1.2 !important;
+          }
     show_name: true
     show_icon: true
     entity: button.greenery_s_farm_enter_task_mode
@@ -34,6 +56,7 @@ cards:
         text: Put the farm in TASK MODE? Lights off, recipe suspended.
 
   - type: button
+    card_mod: *card_style
     show_name: true
     show_icon: true
     entity: button.greenery_s_farm_exit_task_mode
@@ -51,6 +74,7 @@ cards:
   # took effect - the bridge verifies against the output board's own mode
   # field rather than trusting the HTTP 200.
   - type: entities
+    card_mod: *card_style
     title: Farm Control
     show_header_toggle: false
     entities:
@@ -61,6 +85,7 @@ cards:
 
   # Equipment the buttons affect. Watch these change when you press.
   - type: entities
+    card_mod: *card_style
     title: Key Equipment
     show_header_toggle: false
     entities:

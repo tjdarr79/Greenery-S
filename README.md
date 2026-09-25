@@ -162,6 +162,12 @@ sensor has been quiet for a few days — see the hypothesis note under
 
 `farm-dashboard.yaml` (desktop) and `farm-dashboard-mobile.yaml` (phone).
 
+The heavier card borders and bold 40px titles need **card-mod**, installed
+from HACS (Frontend → card-mod), then a browser refresh. Without it the
+dashboards still work, just with stock Home Assistant styling. Title size and
+border weight live in the `card_mod: &card_style` block on the first card of
+each file; every other card reuses it.
+
 ### 6. Optional — Task Mode control
 
 `dashboard-controls.yaml` adds Enter/Exit Task Mode buttons with confirmation
