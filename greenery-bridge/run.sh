@@ -81,5 +81,10 @@ case "$(bashio::config 'log_level')" in
     *)       export FARM_LOG_LEVEL="INFO" ;;
 esac
 
+# Investigation only: log the first events of /farm-monitoring, then stop.
+if bashio::config.true 'log_farm_monitoring'; then
+    export FARM_LOG_MONITORING="1"
+fi
+
 bashio::log.info "Starting bridge"
 exec /opt/venv/bin/python3 -u /app/farm_bridge.py

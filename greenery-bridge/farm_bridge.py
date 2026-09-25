@@ -217,6 +217,20 @@ OUTPUT_DEVICE_ID = "244CAB0FC00C"
 # Task Mode sensor reads true forever and means nothing.
 TASK_MODE_EXCLUDE = {23}
 
+# Channels Home Assistant may switch by hand - only while the farm is in Task
+# Mode. A channel is added here only after it has been physically tested
+# switching on AND off from HA. See README, "Pump switches (Task Mode only)".
+MANUAL_CONTROL_CHANNELS = (1, 2, 3)
+
+# Checked on every start. An explicit raise, not assert: python -O strips those.
+if (set(MANUAL_CONTROL_CHANNELS) & TASK_MODE_EXCLUDE
+        or not set(MANUAL_CONTROL_CHANNELS) <= set(OUTPUT_MAP)):
+    raise RuntimeError("MANUAL_CONTROL_CHANNELS must be mapped channels and must "
+                       "not include a TASK_MODE_EXCLUDE channel")
+
+# Retained "online"/"offline": whether the switches may be used right now.
+MANUAL_CONTROL_AVAILABLE_TOPIC = f"{MQTT_BASE_TOPIC}/manual_control/available"
+
 # NOTE on the chiller: ch23 carries the chiller UNIT, ch8 its PUMP. Do NOT derive
 # a "running dry" sensor from ch23 AND NOT ch8 - the owner kills the chiller at
 # its own switch before opening the nursery valve, and that switch is invisible
@@ -260,9 +274,11 @@ def _output_board(payload: dict) -> dict:
 
 
 def publish_binary_states(client, payload: dict):
+    global _BOARD_FRAME_AT
     board = _output_board(payload)
     if not board:
         log.warning("Output board %s missing from frame", OUTPUT_DEVICE_ID)
+        output_board_lost(client)
         return
 
     outputs = board.get("state") or {}
@@ -270,6 +286,9 @@ def publish_binary_states(client, payload: dict):
     with _MODES_LOCK:
         LATEST_MODES.clear()
         LATEST_MODES.update(modes)
+        LATEST_OUTPUTS.clear()
+        LATEST_OUTPUTS.update(outputs)
+        _BOARD_FRAME_AT = time.monotonic()
     shadow = board.get("shadow") or {}
 
     def send(uid, on):
@@ -289,6 +308,9 @@ def publish_binary_states(client, payload: dict):
 
     send("relay_state_mismatch",
          any(outputs[k] != shadow[k] for k in outputs if k in shadow))
+
+    client.publish(MANUAL_CONTROL_AVAILABLE_TOPIC,
+                   "online" if _farm_in_task_mode() else "offline", retain=True)
 
 
 def publish_binary_discovery(client, availability_topic: str):
@@ -342,14 +364,21 @@ CMD_GET_MODE = {"command": "get_current_mode"}
 CONTROL_TIMEOUT = 15          # seconds for the command round-trip
 VERIFY_DELAY = 6              # seconds to wait for the SSE stream to reflect it
 
-# Latest per-channel mode from the output board, refreshed on every SSE frame.
-# This is the ground truth used to verify a command actually took effect.
+# Latest per-channel mode and relay state from the output board, refreshed on
+# every SSE frame. This is the ground truth used to verify a command actually
+# took effect.
 #
 # Written from the asyncio thread (via publish_binary_states) and read from
-# paho's network thread (via handle_control_command) - guard both sides so a
-# reader never sees a mid-clear()/update() dict.
+# the command threads - _MODES_LOCK guards all three, so a reader never sees a
+# mid-clear()/update() dict.
 LATEST_MODES = {}
+LATEST_OUTPUTS = {}
+_BOARD_FRAME_AT = None        # time.monotonic() of the last frame with the board
 _MODES_LOCK = threading.Lock()
+
+# One farm command at a time, whichever button or switch sent it, so two
+# presses can never interleave their send-and-verify.
+_FARM_COMMAND_LOCK = threading.Lock()
 
 
 def _control_status(client, text):
@@ -390,8 +419,8 @@ def _http_command(payload: dict) -> str:
 
 
 def farmhand_command(payload: dict) -> str:
-    """Send one command. Runs in paho's callback thread, so it uses its own
-    short-lived event loop rather than reaching into the main one."""
+    """Send one command. Runs in a command thread (see run_farm_command), so it
+    uses its own short-lived event loop rather than reaching into the main one."""
     if FARMHAND_CONTROL_TRANSPORT == "http":
         return _http_command(payload)
     loop = asyncio.new_event_loop()
@@ -465,7 +494,156 @@ def publish_button_discovery(client, availability_topic: str):
     )
     client.publish(f"{MQTT_BASE_TOPIC}/control_status/state", "idle", retain=True)
     log.info("Published discovery config for Farm Control Status")
+
+
+def run_farm_command(handler, *args):
+    """Run a command handler off paho's network thread, one at a time.
+
+    The handlers block for seconds while they verify; on paho's thread that
+    would stall every MQTT message behind them.
+    """
+    def worker():
+        if not _FARM_COMMAND_LOCK.acquire(blocking=False):
+            log.info("Farm command waiting for the previous one to finish")
+            _FARM_COMMAND_LOCK.acquire()
+        try:
+            handler(*args)
+        except Exception:
+            log.exception("Farm command handler crashed")
+        finally:
+            _FARM_COMMAND_LOCK.release()
+
+    threading.Thread(target=worker, name="farm-command", daemon=True).start()
 # --- END farmhand task mode control ---
+
+# --- BEGIN task-mode pump switches ---
+# ---------------------------------------------------------------------------
+# PUMP SWITCHES - TASK MODE ONLY
+#
+# Captured from the farmhand local UI 2026-09-25; the pumps physically ran:
+#     {"command": "manual_action", "module": "244CAB0FC00C",
+#      "output": "output_2", "type": "set_output", "value": "on"}
+#
+# Same endpoint as Task Mode. farmhand replies "Control message received!" to
+# EVERY command, including ones it ignores, so the reply proves nothing: the
+# result is read back from the relay's own state in the SSE stream.
+# ---------------------------------------------------------------------------
+
+OUTPUT_VERIFY_TIMEOUT = 10    # seconds to wait for the relay to report the change
+OUTPUT_VERIFY_POLL = 0.5
+# A command needs a frame at most this old to decide Task Mode from; stale data
+# is not proof of anything.
+BOARD_FRESH_SECONDS = 30
+
+
+def _board_reading(key: str):
+    """(relay state or None, monotonic time of the frame it came from)."""
+    with _MODES_LOCK:
+        raw = LATEST_OUTPUTS.get(key)
+        at = _BOARD_FRAME_AT
+    return (None if raw is None else bool(raw)), at
+
+
+def output_board_lost(client):
+    """The stream dropped or a frame lacked the board: no proof of Task Mode.
+
+    Refuse switch commands until the next frame, and grey the switches out -
+    so a command published by hand is refused just as HA's UI would refuse it.
+    """
+    global _BOARD_FRAME_AT
+    with _MODES_LOCK:
+        _BOARD_FRAME_AT = None
+    client.publish(MANUAL_CONTROL_AVAILABLE_TOPIC, "offline", qos=1, retain=True)
+
+
+def handle_output_command(client, ch: int, want_on: bool):
+    """Switch one relay channel, then VERIFY it from the relay's own state."""
+    name = OUTPUT_MAP[ch][0]
+    key = f"output_{ch}"
+    label = f"{name} {'ON' if want_on else 'OFF'}"
+
+    # Decided now, from fresh data - not from whenever HA last saw the switch
+    # available.
+    _, frame_at = _board_reading(key)
+    if frame_at is None or time.monotonic() - frame_at > BOARD_FRESH_SECONDS:
+        _control_status(client, f"{name}: REFUSED - no recent data from the output board")
+        return
+    if not _farm_in_task_mode():
+        _control_status(client, f"{name}: REFUSED - farm not in Task Mode")
+        return
+
+    _control_status(client, f"{label}: sending")
+    started = time.monotonic()
+    try:
+        reply = farmhand_command({
+            "command": "manual_action", "module": OUTPUT_DEVICE_ID,
+            "output": key, "type": "set_output",
+            "value": "on" if want_on else "off",
+        })
+        log.info("farmhand replied: %s", reply)
+    except Exception as e:
+        _control_status(client, f"{label}: FAILED - {type(e).__name__}: {e}")
+        return
+
+    _control_status(client, f"{label}: sent, verifying")
+    # Only a frame that arrived after farmhand took the command counts.
+    acked = time.monotonic()
+    while True:
+        state, frame_at = _board_reading(key)
+        fresh = frame_at is not None and frame_at >= acked
+        if fresh and state == want_on:
+            _control_status(client, f"{label}: CONFIRMED in {time.monotonic() - started:.1f}s")
+            return
+        if time.monotonic() - acked >= OUTPUT_VERIFY_TIMEOUT:
+            break
+        time.sleep(OUTPUT_VERIFY_POLL)
+
+    if not fresh:
+        _control_status(client, f"{label}: NOT CONFIRMED - no update from the "
+                                f"output board in {OUTPUT_VERIFY_TIMEOUT}s")
+    else:
+        reported = "nothing" if state is None else ("ON" if state else "OFF")
+        _control_status(client, f"{label}: NOT CONFIRMED - relay still reports {reported}")
+
+
+def publish_switch_discovery(client, availability_topic: str):
+    for ch in OUTPUT_MAP:
+        config_topic = f"{DISCOVERY_PREFIX}/switch/output_{ch}_switch/config"
+        if ch not in MANUAL_CONTROL_CHANNELS:
+            # An empty retained config deletes the switch, so taking a channel
+            # off the list removes it from HA too.
+            client.publish(config_topic, "", qos=1, retain=True)
+            continue
+        name = f"{OUTPUT_MAP[ch][0]} Switch"
+        client.publish(
+            config_topic,
+            json.dumps({
+                "name": name,
+                "unique_id": f"greenery_s_output_{ch}_switch",
+                "command_topic": f"{MQTT_BASE_TOPIC}/output_{ch}/set",
+                "state_topic": f"{MQTT_BASE_TOPIC}/output_{ch}/state",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "optimistic": False,
+                "retain": False,
+                # Both must be online: the bridge is up AND the farm is in
+                # Task Mode. Otherwise HA shows the switch unavailable.
+                "availability": [
+                    {"topic": availability_topic},
+                    {"topic": MANUAL_CONTROL_AVAILABLE_TOPIC},
+                ],
+                "availability_mode": "all",
+                "icon": "mdi:pump",
+                "device": DEVICE_INFO,
+            }),
+            qos=1, retain=True,
+        )
+        log.info(f"Published discovery config for {name}")
+
+    # Unavailable until the first frame proves Task Mode - never "online" left
+    # over from before a restart.
+    client.publish(MANUAL_CONTROL_AVAILABLE_TOPIC, "offline", qos=1, retain=True)
+# --- END task-mode pump switches ---
 
 # --- BEGIN module offline detection (added by apply_modules_patch) ---
 # ---------------------------------------------------------------------------
@@ -605,6 +783,9 @@ def build_mqtt_client() -> mqtt.Client:
     availability_topic = f"{MQTT_BASE_TOPIC}/bridge/status"
     client.will_set(availability_topic, payload="offline", qos=1, retain=True)
 
+    output_set_topics = {f"{MQTT_BASE_TOPIC}/output_{ch}/set": ch
+                         for ch in MANUAL_CONTROL_CHANNELS}
+
     def on_connect(c, userdata, flags, rc):
         msg = CONNACK_CODES.get(rc, f"Unknown return code {rc}")
         if rc == 0:
@@ -612,6 +793,8 @@ def build_mqtt_client() -> mqtt.Client:
             c.publish(availability_topic, "online", qos=1, retain=True)
             c.subscribe(f"{MQTT_BASE_TOPIC}/enter_task_mode/set", qos=1)
             c.subscribe(f"{MQTT_BASE_TOPIC}/exit_task_mode/set", qos=1)
+            for topic in output_set_topics:
+                c.subscribe(topic, qos=1)
         else:
             log.error(f"MQTT connection FAILED: {msg}")
 
@@ -624,11 +807,30 @@ def build_mqtt_client() -> mqtt.Client:
 
     def on_message(c, userdata, msg):
         topic = msg.topic
+        # The broker replays a retained message on every (re)subscribe - i.e.
+        # every bridge restart and reconnect. A command must never replay, so
+        # drop it and clear it off the broker.
+        if topic.endswith("/set") and msg.retain:
+            log.warning("IGNORED retained command on %s - commands are never "
+                        "replayed; clearing it from the broker", topic)
+            c.publish(topic, "", qos=1, retain=True)
+            return
+        # The clear above arrives back here as an empty message. Home
+        # Assistant never sends an empty command.
+        if not msg.payload:
+            return
         log.info("MQTT command received on %s", topic)
         if topic.endswith("/enter_task_mode/set"):
-            handle_control_command(c, "enter")
+            run_farm_command(handle_control_command, c, "enter")
         elif topic.endswith("/exit_task_mode/set"):
-            handle_control_command(c, "exit")
+            run_farm_command(handle_control_command, c, "exit")
+        elif topic in output_set_topics:
+            value = msg.payload.decode("utf-8", "replace").strip().upper()
+            if value not in ("ON", "OFF"):
+                log.warning("Ignored %r on %s - expected ON or OFF", value, topic)
+                return
+            run_farm_command(handle_output_command, c,
+                             output_set_topics[topic], value == "ON")
 
     client.on_message = on_message
 
@@ -687,6 +889,7 @@ def publish_discovery(client: mqtt.Client):
 
     publish_binary_discovery(client, availability_topic)
     publish_button_discovery(client, availability_topic)
+    publish_switch_discovery(client, availability_topic)
     publish_module_discovery(client, availability_topic)
 
 
@@ -737,6 +940,69 @@ async def stream_farm_data(mqtt_client: mqtt.Client):
                 log.debug(f"Published farm state @ {time.strftime('%X')}")
 
 
+# ---------------------------------------------------------------------------
+# INVESTIGATION ONLY - /farm-monitoring
+#
+# farmhand's UI opens a second SSE stream, /farm-monitoring, probably where
+# replies to get_current_mode / get_version arrive. With FARM_LOG_MONITORING=1
+# the bridge logs the first MONITORING_LOG_EVENTS events from it at INFO, then
+# disconnects. It sends nothing and publishes nothing.
+# ---------------------------------------------------------------------------
+
+FARM_LOG_MONITORING = os.environ.get("FARM_LOG_MONITORING", "").strip().lower() in (
+    "1", "true", "yes", "on")
+# Follows the farm's host and port, like FARM_CONTROL_URL does.
+MONITORING_URL = os.environ.get("FARM_MONITORING_URL",
+                                SSE_URL.rsplit("/", 1)[0] + "/farm-monitoring")
+MONITORING_LOG_EVENTS = 20
+MONITORING_LOG_MAX_SECONDS = 600   # give up after this even if fewer events came
+MONITORING_LOG_CHARS = 2000        # per event, so one huge frame cannot flood the log
+
+
+async def log_farm_monitoring():
+    log.info("FARM_LOG_MONITORING on: logging the first %d events from %s",
+             MONITORING_LOG_EVENTS, MONITORING_URL)
+    deadline = time.monotonic() + MONITORING_LOG_MAX_SECONDS
+    seen = 0
+    # farmhand ends its streams after ~60s, so reconnect until done.
+    while seen < MONITORING_LOG_EVENTS and time.monotonic() < deadline:
+        timeout = aiohttp.ClientTimeout(total=max(1.0, deadline - time.monotonic()))
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(MONITORING_URL) as response:
+                    log.info("farm-monitoring: HTTP %s, Content-Type %s",
+                             response.status, response.headers.get("Content-Type"))
+                    if response.status != 200:
+                        body = await response.text()
+                        log.info("farm-monitoring: body: %s", body[:MONITORING_LOG_CHARS])
+                        break
+                    event = []
+                    async for line_bytes in response.content:
+                        line = line_bytes.decode("utf-8", "replace").rstrip("\r\n")
+                        if line:
+                            event.append(line)
+                            continue
+                        if not event:
+                            continue
+                        # A blank line ends one SSE event.
+                        seen += 1
+                        text = "\n".join(event)
+                        event = []
+                        log.info("farm-monitoring event %d/%d (%d chars): %s",
+                                 seen, MONITORING_LOG_EVENTS, len(text),
+                                 text[:MONITORING_LOG_CHARS])
+                        if seen >= MONITORING_LOG_EVENTS:
+                            break
+        except asyncio.TimeoutError:
+            break
+        except Exception as e:
+            log.warning("farm-monitoring: %s: %s", type(e).__name__, e)
+        if seen < MONITORING_LOG_EVENTS and time.monotonic() < deadline:
+            await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+    log.info("farm-monitoring: disconnected after %d events. Turn log_farm_monitoring "
+             "(FARM_LOG_MONITORING) back off.", seen)
+
+
 def log_farm_identity():
     """Say up front which farm this is and what its entity IDs will be.
 
@@ -769,6 +1035,9 @@ async def run_forever():
             log.error(f"MQTT setup failed ({e}); retrying in {RECONNECT_DELAY_SECONDS}s")
             await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
+    # Held in a variable: asyncio keeps only a weak reference to a task.
+    monitoring_task = asyncio.create_task(log_farm_monitoring()) if FARM_LOG_MONITORING else None
+
     while True:
         try:
             await stream_farm_data(mqtt_client)
@@ -776,6 +1045,7 @@ async def run_forever():
             log.warning(f"SSE stream dropped ({e}); reconnecting in {RECONNECT_DELAY_SECONDS}s")
         except Exception as e:
             log.error(f"Unexpected error: {e}; reconnecting in {RECONNECT_DELAY_SECONDS}s")
+        output_board_lost(mqtt_client)
         await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
 

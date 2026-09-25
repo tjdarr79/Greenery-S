@@ -15,6 +15,7 @@ Run this before telling anyone the repo is ready.
 """
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -100,6 +101,16 @@ MARKERS = {
         ('LEGACY_FARM_NAME = "Greenery S Farm"', "unset farm name keeps today's device"),
         ('"name": FARM_NAME,', "device named after the farm"),
         ('"device": DEVICE_INFO,', "one shared device block"),
+        ("MANUAL_CONTROL_CHANNELS = (", "pump switch channel allow-list"),
+        ("/manual_control/available", "switches gated on Task Mode"),
+        ('"availability_mode": "all"', "switch needs bridge AND Task Mode"),
+        ("def handle_output_command", "pump switch command handler"),
+        ("REFUSED - farm not in Task Mode", "Task Mode re-checked at command time"),
+        ("OUTPUT_VERIFY_TIMEOUT", "switch result read back from the relay"),
+        ("msg.retain", "retained commands never replayed"),
+        ("_FARM_COMMAND_LOCK", "one farm command at a time"),
+        ("run_farm_command(handle_control_command", "Task Mode buttons off paho's thread"),
+        ("FARM_LOG_MONITORING", "/farm-monitoring investigation flag"),
     ],
     "farm-alerts-script.yaml": [
         ("notify.send_message", "durable notify ENTITY path"),
@@ -126,6 +137,9 @@ MARKERS = {
         ("MQTT \u2192 Greenery S Farm", "where entities actually live"),
         ("Greenery-S#stable", "customer farms told to use the stable branch"),
         ("Never commit to or work from `stable`", "developers told to stay off stable"),
+        ("Pump switches (Task Mode only)", "pump switch documentation"),
+        ("farmhand's reply proves nothing", "the HTTP reply is not confirmation"),
+        ("### Adding a channel", "physical test before a channel is added"),
     ],
     "CONTRIBUTING.md": [
         ("git merge --ff-only main", "stable only fast-forwards to main"),
@@ -138,15 +152,18 @@ MARKERS = {
         ("FARM_SSE_URL", "farm endpoint exported"),
         ("export FARM_NAME=\"$(bashio::config 'farm_name')\"", "farm name passed to the bridge"),
         ("FARM_CONTROL_URL", "Task Mode endpoint follows farm_host"),
+        ("FARM_LOG_MONITORING", "monitoring investigation reachable from the app"),
     ],
     "greenery-bridge/config.yaml": [
         ("mqtt:want", "MQTT service declared"),
         ("aarch64", "HA Green architecture"),
         ("farm_name: Greenery S Farm", "legacy default - upgrades are not renamed"),
         ("farm_name: str(1,)", "farm name can never be blank"),
+        ("log_farm_monitoring: false", "monitoring investigation off by default"),
     ],
     "greenery-bridge/translations/en.yaml": [
         ("farm_name:", "farm name is a labelled field"),
+        ("log_farm_monitoring:", "monitoring option is a labelled field"),
     ],
     "greenery-bridge/DOCS.md": [
         ("`farm_name`", "farm name documented"),
@@ -154,6 +171,8 @@ MARKERS = {
         ("render-farm-yaml.py", "per-farm YAML step documented"),
         ("Greenery-S#stable", "customer install URL"),
         ("If either check fails", "fallback if branch selection does not work"),
+        ("## Pump switches (Task Mode only)", "pump switches documented"),
+        ("`log_farm_monitoring`", "monitoring option documented"),
     ],
     "tools/render-farm-yaml.py": [
         ("ENTITY_REF.subn", "entity IDs rewritten"),
@@ -174,8 +193,21 @@ MARKERS = {
     "dashboard-controls.yaml": [
         ("confirmation:", "confirmation guard"),
         ("button.press", "correct action - not automation.trigger"),
+        ("Pumps (Task Mode only)", "pump switches card"),
     ],
 }
+
+
+def _module_literal(tree, name):
+    """The literal value assigned to a module-level name, or None."""
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id == name):
+            try:
+                return ast.literal_eval(node.value)
+            except ValueError:
+                return None
+    return None
 
 ok = True
 def check(passed, label, detail=""):
@@ -240,6 +272,66 @@ def main():
         check(n == 3, f"farm-alerts-script.yaml: {n}/3 delivery titles use alert_title",
               "a notification path skips the farm-name prefix")
         check('title: "{{ title }}"' not in t, "farm-alerts-script.yaml: no bare title left")
+
+    print("\n--- Pump switches are guarded ---")
+    # The bridge also refuses to start with a bad allow-list - but on a farm
+    # that means no sensors and no alerts. Catch it here, before it ships.
+    allowed = []
+    try:
+        tree = ast.parse((root / "farm_bridge.py").read_text(encoding="utf-8"))
+        allowed = _module_literal(tree, "MANUAL_CONTROL_CHANNELS")
+        excluded = _module_literal(tree, "TASK_MODE_EXCLUDE")
+        output_map = _module_literal(tree, "OUTPUT_MAP")
+        readable = None not in (allowed, excluded, output_map)
+        check(readable, "MANUAL_CONTROL_CHANNELS, TASK_MODE_EXCLUDE, OUTPUT_MAP are literals")
+        if readable:
+            check(not set(allowed) & set(excluded),
+                  f"MANUAL_CONTROL_CHANNELS {tuple(allowed)} has no TASK_MODE_EXCLUDE channel",
+                  f"remove {sorted(set(allowed) & set(excluded))}")
+            check(set(allowed) <= set(output_map), "every switchable channel is mapped")
+    except (OSError, SyntaxError) as e:
+        check(False, "farm_bridge.py readable for the allow-list check", str(e)[:70])
+        allowed, output_map = [], {}
+
+    # A switch shown without a confirmation toggles a pump on one pocket-tap.
+    # Tiles also toggle on an ICON tap by default, so both actions need one.
+    # A bare switch row in an entities card is a toggle with no confirmation.
+    for rel in ["dashboard-controls.yaml", "farm-dashboard.yaml", "farm-dashboard-mobile.yaml"]:
+        p = root / rel
+        try:
+            doc = yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, yaml.YAMLError):
+            continue   # reported by the parse checks
+        text = p.read_text(encoding="utf-8", errors="replace")
+        bare, unguarded, n = [], [], 0
+
+        def walk(node):
+            nonlocal n
+            if isinstance(node, dict):
+                ent = node.get("entity")
+                if isinstance(ent, str) and ent.startswith("switch."):
+                    n += 1
+                    if not all(isinstance(node.get(a), dict) and node[a].get("confirmation")
+                               for a in ("tap_action", "icon_tap_action")):
+                        unguarded.append(ent)
+                for v in node.values():
+                    walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    if isinstance(v, str) and v.startswith("switch."):
+                        bare.append(v)
+                    walk(v)
+
+        walk(doc)
+        if n or bare:
+            check(not unguarded and not bare,
+                  f"{rel}: every switch tap and icon tap asks for confirmation",
+                  ", ".join(unguarded + bare))
+        if rel == "dashboard-controls.yaml" and output_map:
+            for ch in allowed:
+                name = output_map[ch][0]
+                ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") + "_switch"
+                check(ent in text, f"{rel}: tile for ch{ch} {name}", f"expected {ent}")
 
     print("\n--- YAML parses ---")
     bdir = root / "greenery-bridge"
@@ -312,12 +404,12 @@ def main():
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 770, f"farm_bridge.py is {n} lines (expect ~790)",
+        check(n >= 1040, f"farm_bridge.py is {n} lines (expect ~1060)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 927, f"README.md is {n} lines (expect ~947)",
+        check(n >= 1049, f"README.md is {n} lines (expect ~1069)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

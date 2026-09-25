@@ -165,8 +165,10 @@ sensor has been quiet for a few days — see the hypothesis note under
 ### 6. Optional — Task Mode control
 
 `dashboard-controls.yaml` adds Enter/Exit Task Mode buttons with confirmation
-guards. Read **Task Mode control** first: the endpoint is undocumented, and the
-card must carry `confirmation:` or a pocket-tap will stop the farm.
+guards, and a separate **Pumps (Task Mode only)** card. Read **Task Mode
+control** and **Pump switches (Task Mode only)** first: the endpoint is
+undocumented, and the card must carry `confirmation:` or a pocket-tap will stop
+the farm.
 
 ---
 
@@ -174,7 +176,7 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 
 | File | Purpose |
 |---|---|
-| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, and Task Mode control all included — **no patch steps** |
+| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, Task Mode control and Task-Mode-only pump switches all included — **no patch steps** |
 | `farm-bridge.env.example` | Copy to `farm-bridge.env` and fill in |
 | `farm-bridge.service` | systemd unit (Linux) |
 | `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
@@ -182,7 +184,7 @@ card must carry `confirmation:` or a pocket-tap will stop the farm.
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard |
 | `farm-dashboard-mobile.yaml` | Phone dashboard |
-| `dashboard-controls.yaml` | Task Mode control card |
+| `dashboard-controls.yaml` | Task Mode control card, with the Task-Mode-only pump switches |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
@@ -466,10 +468,12 @@ recalibrated.
 Device `244CAB0FC00C` is the farm's actuator layer. `farm_bridge.py` publishes
 all 32 channels as **binary sensors, read-only**, plus three derived signals.
 
-**Nothing writes to this board.** These relays are driven by farmhand's recipe
-engine. Writing to them makes Home Assistant and the Hub disagree about reality,
-and the engine reverts on its next cycle. Any auxiliary control belongs on
-separate relay hardware.
+**Outside Task Mode, nothing writes to this board.** These relays are driven by
+farmhand's recipe engine. Writing to them makes Home Assistant and the Hub
+disagree about reality, and the engine reverts on its next cycle. Any auxiliary
+control belongs on separate relay hardware. The one exception is three pumps,
+switchable only while the recipe is suspended in Task Mode, through farmhand's
+own manual command — see **Pump switches (Task Mode only)**.
 
 ### Why this matters
 
@@ -598,6 +602,123 @@ The buttons only exist while the bridge is alive — correct, since a dead bridg
 means the control could not be trusted. The fallback is the farmhand UI itself,
 reachable from a phone over the Tailscale tunnel (see Remote access below).
 That path is fully supported and does not depend on any of this.
+
+## Pump switches (Task Mode only)
+
+Three switches, published by the bridge over MQTT discovery, turn single pumps
+on and off — for a tank cleanout, without walking to the farmhand screen.
+
+| Entity | Relay channel |
+|---|---|
+| `switch.greenery_s_farm_cultivation_recirc_pump_switch` | 1 — Cultivation Recirc Pump |
+| `switch.greenery_s_farm_left_send_pump_switch` | 2 — Left Send Pump |
+| `switch.greenery_s_farm_right_send_pump_switch` | 3 — Right Send Pump |
+
+Each sends the same request the farmhand UI sends, captured with DevTools and
+confirmed on this farm (the pumps physically ran):
+
+```
+POST http://192.168.200.200:3001/farm-control
+{"command":"manual_action","module":"244CAB0FC00C",
+ "output":"output_2","type":"set_output","value":"on"}
+```
+
+### Only in Task Mode
+
+Outside Task Mode the recipe engine owns the relays, so the switches show
+**unavailable**. The bridge publishes `farm/manual_control/available` —
+`online` only while `Task Mode Active` is on — and each switch needs both it
+and the bridge itself online.
+
+Greyed-out is not the guard. A command that arrives anyway — from an
+automation, or published by hand — is checked again at the moment it is
+handled, against output-board data no older than 30 seconds. Outside Task Mode
+it is refused and nothing is sent:
+
+`Left Send Pump: REFUSED - farm not in Task Mode`
+
+"Task Mode" here means what `Task Mode Active` means: any channel off `auto`,
+ch23 aside. Holding some other channel in manual from the farmhand UI opens the
+switches too.
+
+### farmhand's reply proves nothing
+
+`/farm-control` answers `Control message received!` to every command,
+including read-only ones and ones it ignores. So the bridge does not trust it:
+after sending, it watches the relay's own state in the SSE stream (the same
+data behind the channel's binary sensor) for up to 10 seconds, counting only
+frames that arrive after farmhand took the command. **Farm Control Status**
+then reads one of:
+
+| Status | Meaning |
+|---|---|
+| `Left Send Pump ON: CONFIRMED in 2.1s` | The relay reports the new state |
+| `Left Send Pump ON: NOT CONFIRMED - relay still reports OFF` | farmhand took the command; the relay did not move |
+| `Left Send Pump ON: NOT CONFIRMED - no update from the output board in 10s` | The data stream went quiet — the result is unknown |
+| `Left Send Pump: REFUSED - …` | Not sent at all |
+
+The switch itself is never optimistic: it shows the relay's reported state,
+so a command that did not take leaves it where it was.
+
+### What it never does
+
+- **Sends nothing at startup.** Restarting the bridge in Task Mode sends no
+  command.
+- **Never replays a retained command.** The broker re-delivers a retained
+  message on every reconnect. The bridge ignores any command that arrives
+  retained, logs a warning and clears it from the broker. When publishing a
+  test command by hand, leave **Retain** off.
+- **Runs one command at a time.** Two presses — pump, Task Mode button, any
+  mix — run one after the other, never interleaved. Commands run off the MQTT
+  thread, so a 10-second verify does not stall the bridge.
+- **Does not time out a pump.** A switch left on runs until someone turns it
+  off. In Task Mode farmhand's automatic safety shutoffs (such as trough
+  overflow protection) are not running. Stay with the farm while a pump you
+  started is on.
+
+### Adding a channel
+
+A channel becomes switchable only after it has been physically tested. In
+order:
+
+1. In Task Mode, switch it on and off **from the farmhand UI** and watch the
+   equipment respond.
+2. Add its number to `MANUAL_CONTROL_CHANNELS` in `farm_bridge.py`, copy the
+   file over `greenery-bridge/farm_bridge.py`, bump the version, and add a tile
+   to the pumps card with both confirmations (see the card's header).
+3. In Task Mode, switch it on **and** off from Home Assistant, watch the
+   equipment, and see `CONFIRMED` both ways — before anyone relies on it.
+
+Never a `TASK_MODE_EXCLUDE` channel (ch23): the bridge refuses to start with
+one listed, and `verify-repo.py` fails. Taking a channel off the list removes
+its switch from Home Assistant at the next bridge start.
+
+### Acceptance test — at a planned cleanout
+
+1. Farm in **auto**: the three switches show unavailable. In **Settings →
+   Devices & Services → MQTT → Configure**, publish `ON` to
+   `farm/output_2/set` (Retain off): status reads `REFUSED`, the relay does not
+   change.
+2. Farm in **Task Mode**: each switch ON gives `CONFIRMED` within 10 s and the
+   pump physically runs; OFF gives `CONFIRMED` and it stops.
+3. Restart the app while in Task Mode: the Log shows no command sent.
+4. Leave one pump ON by hand, then exit Task Mode, and record below whether
+   farmhand returns it to auto.
+
+**Open question — does Exit Task Mode return a hand-set pump to auto?**
+*Not yet tested.* Record the answer here. If it does not, `Task Mode Active`
+stays on after the exit, **Exit Task Mode** reports `NOT CONFIRMED`,
+`11-recirc-pump-stopped` stays silenced, and `12-task-mode-left-on` pages after
+6 hours.
+
+### /farm-monitoring — where do replies go?
+
+Read-only commands such as `get_current_mode` get the same useless HTTP reply.
+farmhand's UI also opens a second stream, `/farm-monitoring`, which is probably
+where their answers arrive. To look: set `FARM_LOG_MONITORING=1` (app option
+**Log farm-monitoring stream**), restart, and within ten minutes open the
+farmhand UI or send a `get_current_mode`. The bridge logs the first 20 events at
+INFO, then disconnects. It sends and publishes nothing.
 
 ## Single point of failure: CloudGate
 
@@ -943,5 +1064,6 @@ opening a firewall port directly to the internet.
 - Write/control from HA (dosing, lighting, climate) — deliberately deferred;
   manual control mode disables Farmhand's automatic safety shutoffs (e.g.
   trough overflow protection), so any HA-side control automation needs to
-  replicate those interlocks before going live
+  replicate those interlocks before going live. The only exception so far is
+  the hand-operated pump switches, Task Mode only — no automation drives them
 - Mobile-optimized dashboard layout — current layout targets desktop width

@@ -15,6 +15,16 @@
 #
 # Entity IDs carry the device prefix. The doubled "farm" in the status sensor
 # is correct: device "Greenery S Farm" + entity "Farm Control Status".
+#
+# The last card, "Pumps (Task Mode only)", switches single pumps and is kept
+# apart from the Task Mode buttons. Its switches are unavailable unless the
+# farm is in Task Mode. To put it elsewhere, cut that block into its own
+# Manual card and remove its leading indentation.
+#
+# 3. A tile toggles its switch on an ICON tap by default - with no
+#    confirmation. Every pump tile therefore sets icon_tap_action as well as
+#    tap_action, both with `confirmation:`, and hold_action: none. Keep all
+#    three when editing; verify-repo.py checks the first two.
 # ---------------------------------------------------------------------------
 
 type: vertical-stack
@@ -72,3 +82,52 @@ cards:
         name: HVAC Cooling
       - entity: binary_sensor.greenery_s_farm_co2_regulator
         name: CO2 Regulator
+
+  # Task Mode only. Result of each press shows in "Last command" above:
+  # CONFIRMED is read back from the relay, not from farmhand's reply.
+  - type: grid
+    title: Pumps (Task Mode only)
+    columns: 1
+    square: false
+    cards:
+      - type: tile
+        entity: switch.greenery_s_farm_cultivation_recirc_pump_switch
+        name: Cultivation Recirc Pump
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Cultivation Recirc Pump on/off?
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Cultivation Recirc Pump on/off?
+        hold_action:
+          action: none
+
+      - type: tile
+        entity: switch.greenery_s_farm_left_send_pump_switch
+        name: Left Send Pump
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Left Send Pump on/off?
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Left Send Pump on/off?
+        hold_action:
+          action: none
+
+      - type: tile
+        entity: switch.greenery_s_farm_right_send_pump_switch
+        name: Right Send Pump
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Right Send Pump on/off?
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Right Send Pump on/off?
+        hold_action:
+          action: none
