@@ -12,7 +12,7 @@ views:
         card_mod: &card_style
           # Requires card-mod (HACS). Without it these lines are ignored and the
           # cards render with stock styling - nothing breaks.
-          # Title size appears twice below (both copies of 40px) - change both.
+          # Title size appears twice below (both copies of 28px) - change both.
           # This block is defined once and reused by every card in the file.
           style:
             .: |
@@ -22,13 +22,13 @@ views:
               }
               .card-header {
                 font-weight: 700 !important;
-                font-size: 40px !important;
+                font-size: 28px !important;
                 line-height: 1.2 !important;
               }
             ha-card$: |
               .card-header {
                 font-weight: 700 !important;
-                font-size: 40px !important;
+                font-size: 28px !important;
                 line-height: 1.2 !important;
               }
         entity: binary_sensor.greenery_s_farm_farm_bridge_status
