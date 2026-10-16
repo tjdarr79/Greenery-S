@@ -1,0 +1,30 @@
+alias: Farm farmhand Version Changed
+description: >-
+  Task Mode, the pump switches, Cool-Down and the 24-hour switches all use
+  farmhand commands that Freight Farms never documented - captured from
+  farmhand's own UI. A farmhand update can change or remove any of them
+  without notice. The bridge reads farmhand's version every 5 minutes; when it
+  changes, re-test those controls before relying on them.
+
+  Ignores the sensor going to or coming back from unknown/unavailable, so a
+  bridge or Home Assistant restart does not trigger it.
+triggers:
+  - entity_id: sensor.greenery_s_farm_farmhand_version
+    not_from:
+      - unknown
+      - unavailable
+    not_to:
+      - unknown
+      - unavailable
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: ℹ️ farmhand Updated
+      notification_id: farm_farmhand_version
+      message: >-
+        farmhand updated {{ trigger.from_state.state }} -> {{ trigger.to_state.state }}.
+        Re-test Task Mode, pump switches, Cool-Down and 24-hour switches; these
+        use unsupported commands.
+mode: single

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3.0
+
+Cool-Down, a fourth pump switch, 24-hour settings switches and the farmhand
+version. Safe to upgrade: no existing entity ID changes.
+
+- **Start Cool-Down / End Cool-Down** buttons, for a farm running hot: Task
+  Mode takes the grow lights off and relays 1 and 8 (cultivation recirc,
+  nursery recirc + chiller pump) are switched back on, each step confirmed
+  from the relays. Phone only, never automatic, not for cleanouts. New
+  **Cool-Down Active** and **Cool-Down Fault** sensors; a pump that stops for
+  60 s during a cool-down raises the fault. See DOCS.md, *Cool-Down*.
+- **Nursery Recirc and Chiller Pump Switch** (relay 8), Task Mode only like
+  the other three. Physically tested 2026-10-16.
+- **Nursery Top 24 h**, **Nursery Bottom 24 h**, **Cultivation Watering 24 h**
+  switch farmhand's own 24-hour settings, replacing the cloud app toggle. They
+  show what the Hub reports and confirm every change by reading it back. Those
+  six settings are the only ones the app can ever write.
+- **farmhand Version** sensor (diagnostic).
+- The app now keeps farmhand's reply stream (`/farm-monitoring`) open, and at
+  start and every 5 minutes sends two read-only queries farmhand's own page
+  sends on every load: `get_farm_info` and `get_version`. **Log farm-monitoring
+  stream** now only logs it.
+- A pump-switch or Cool-Down press that arrives while the farm data stream is
+  reconnecting (farmhand ends it every minute) now waits up to 10 s for fresh
+  data instead of being refused.
+- New automations `21-cool-down-fault` (critical) and
+  `22-farmhand-version-changed`. Re-paste `dashboard-controls.yaml` (or its
+  rendered copy) for the Cool-Down, relay 8 and 24-Hour Settings cards.
+
 ## 1.2.0
 
 Pump switches, Task Mode only. Safe to upgrade: no existing entity ID changes.

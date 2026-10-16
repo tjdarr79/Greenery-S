@@ -147,12 +147,12 @@ that, when skipped, let ten dead automations go unnoticed indefinitely. See
 
 ### 4. Install the automations
 
-Thirteen files in `automations/`, pasted one at a time — HA's editor rejects a
+Twenty-two files in `automations/`, pasted one at a time — HA's editor rejects a
 multi-automation list. None of them contain a phone name; that lives only in
 the script. See **Installing the automations**.
 
 Start with `01-bridge-offline.yaml`, then verify it with ⋮ → **Run actions**.
-If that reaches your phone, the wiring is proven for all thirteen.
+If that reaches your phone, the wiring is proven for all of them.
 
 Hold back `13-equipment-not-responding.yaml` until the `Relay State Mismatch`
 sensor has been quiet for a few days — see the hypothesis note under
@@ -164,11 +164,12 @@ sensor has been quiet for a few days — see the hypothesis note under
 
 ### 6. Optional — Task Mode control
 
-`dashboard-controls.yaml` adds Enter/Exit Task Mode buttons with confirmation
-guards, and a separate **Pumps (Task Mode only)** card. Read **Task Mode
-control** and **Pump switches (Task Mode only)** first: the endpoint is
-undocumented, and the card must carry `confirmation:` or a pocket-tap will stop
-the farm.
+`dashboard-controls.yaml` adds a **Cool-Down** card at the top, Enter/Exit
+Task Mode buttons with confirmation guards, a separate **Pumps (Task Mode
+only)** card, and a **24-Hour Settings** card. Read **Task Mode control**,
+**Pump switches (Task Mode only)**, **Cool-Down (phone only)** and **24-hour
+settings switches** first: the commands are undocumented, and every card must
+carry `confirmation:` or a pocket-tap will stop the farm.
 
 ---
 
@@ -176,26 +177,28 @@ the farm.
 
 | File | Purpose |
 |---|---|
-| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, Task Mode control and Task-Mode-only pump switches all included — **no patch steps** |
+| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, Task Mode control, Task-Mode-only pump switches, Cool-Down, 24-hour settings switches and the farmhand version all included — **no patch steps** |
 | `farm-bridge.env.example` | Copy to `farm-bridge.env` and fill in |
 | `farm-bridge.service` | systemd unit (Linux) |
 | `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
-| `automations/01`–`20` | Alert automations, pasted into HA one at a time |
+| `automations/01`–`22` | Alert automations, pasted into HA one at a time |
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard |
 | `farm-dashboard-mobile.yaml` | Phone dashboard |
-| `dashboard-controls.yaml` | Task Mode control card, with the Task-Mode-only pump switches |
+| `dashboard-controls.yaml` | Control card: Cool-Down, Task Mode, the Task-Mode-only pump switches, 24-hour settings |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
 | `tools/render-farm-yaml.py` | Writes a farm's own copy of every automation and dashboard, for any farm name other than the default |
+| `tools/farmhand/` | Run-by-hand farmhand scripts: a read-only settings dump, and the 24-hour switch for when HA is down — see its README |
 | `greenery-bridge/` | **The Home Assistant app** — how the bridge is installed |
 | `repository.yaml` | Makes this repo installable as an HA add-on repository |
 | `CONTRIBUTING.md` | Branches and releases: `main` for development, `stable` for customer farms |
 | `legacy/windows-installer/` | **Retired** Windows installer and manual Windows guide. Reference and emergency fallback only |
 
-Everything under `tools/` is optional and read-only. The bridge does not use
-them.
+Everything under `tools/` is optional, and read-only except
+`tools/farmhand/set_24hr.py`, which writes the 24-hour settings. The bridge
+does not use them.
 
 ## Confirmed device map
 
@@ -387,7 +390,7 @@ level of Devices & Services. Easy to miss when you are looking for it by name.
 
 ## Alert automations
 
-Twenty phone-notification automations live in `automations/`, one file each,
+Twenty-two phone-notification automations live in `automations/`, one file each,
 covering the thresholds actually needed for daily operation. They notify
 via Home Assistant's Companion App, not email/SMS.
 
@@ -417,6 +420,8 @@ deployed — see "Notification routing" below.**
 | `18-air-temp-low.yaml` | Air temp <55 °F | 15 min | Heater failure or tripped CB11. Only the high half existed before |
 | `19-hvac-cooling-stuck.yaml` | HVAC cooling continuous | 24 h | Not reaching setpoint — refrigerant, condenser, or a load it cannot match |
 | `20-send-pump-pressure.yaml` | Send pump on with low line pressure | 2 min | Clog, air lock, or failed impeller. Crop stops being irrigated |
+| `21-cool-down-fault.yaml` | Cool-Down Fault turns on | immediate | **Critical.** A recirc or chiller pump not confirmed running during Cool-Down — the chiller may run with no flow. Task Mode silences 11, so this is the only recirc alarm then |
+| `22-farmhand-version-changed.yaml` | farmhand Version changes | immediate | Task Mode, pump switches, Cool-Down and 24-hour switches use unsupported commands — re-test them |
 
 ### Water temp measurement caveat (important)
 
@@ -605,17 +610,22 @@ That path is fully supported and does not depend on any of this.
 
 ## Pump switches (Task Mode only)
 
-Three switches, published by the bridge over MQTT discovery, turn single pumps
+Four switches, published by the bridge over MQTT discovery, turn single pumps
 on and off — for a tank cleanout, without walking to the farmhand screen.
 
-| Entity | Relay channel |
-|---|---|
-| `switch.greenery_s_farm_cultivation_recirc_pump_switch` | 1 — Cultivation Recirc Pump |
-| `switch.greenery_s_farm_left_send_pump_switch` | 2 — Left Send Pump |
-| `switch.greenery_s_farm_right_send_pump_switch` | 3 — Right Send Pump |
+| Entity | Relay channel | Tested |
+|---|---|---|
+| `switch.greenery_s_farm_cultivation_recirc_pump_switch` | 1 — Cultivation Recirc Pump | 2026-09-25 |
+| `switch.greenery_s_farm_left_send_pump_switch` | 2 — Left Send Pump | 2026-09-25 |
+| `switch.greenery_s_farm_right_send_pump_switch` | 3 — Right Send Pump | 2026-09-25 |
+| `switch.greenery_s_farm_nursery_recirc_and_chiller_pump_switch` | 8 — Nursery Recirc and Chiller Pump | 2026-10-16 |
+
+Channel 8 also powers the chiller pump: switching it off stops the chiller's
+water flow.
 
 Each sends the same request the farmhand UI sends, captured with DevTools and
-confirmed on this farm (the pumps physically ran):
+confirmed on this farm (the pumps physically ran; for ch8 the capture tool
+showed `output_8`, and only `output_8`, change on and off):
 
 ```
 POST http://192.168.200.200:3001/farm-control
@@ -662,8 +672,11 @@ so a command that did not take leaves it where it was.
 
 ### What it never does
 
-- **Sends nothing at startup.** Restarting the bridge in Task Mode sends no
-  command.
+- **Sends no command at startup.** Restarting the bridge in Task Mode sends
+  no control command. The only requests it sends unprompted are the two
+  read-only queries farmhand's own page sends on every load — `get_farm_info`
+  and `get_version` — at start and every 5 minutes (see **farmhand reply
+  stream**).
 - **Never replays a retained command.** The broker re-delivers a retained
   message on every reconnect. The bridge ignores any command that arrives
   retained, logs a warning and clears it from the broker. When publishing a
@@ -695,7 +708,7 @@ its switch from Home Assistant at the next bridge start.
 
 ### Acceptance test — at a planned cleanout
 
-1. Farm in **auto**: the three switches show unavailable. In **Settings →
+1. Farm in **auto**: the four switches show unavailable. In **Settings →
    Devices & Services → MQTT → Configure**, publish `ON` to
    `farm/output_2/set` (Retain off): status reads `REFUSED`, the relay does not
    change.
@@ -705,20 +718,153 @@ its switch from Home Assistant at the next bridge start.
 4. Leave one pump ON by hand, then exit Task Mode, and record below whether
    farmhand returns it to auto.
 
-**Open question — does Exit Task Mode return a hand-set pump to auto?**
-*Not yet tested.* Record the answer here. If it does not, `Task Mode Active`
-stays on after the exit, **Exit Task Mode** reports `NOT CONFIRMED`,
-`11-recirc-pump-stopped` stays silenced, and `12-task-mode-left-on` pages after
-6 hours.
+**Does Exit Task Mode return a hand-set pump to auto?** For the recirc pumps,
+yes: the owner's routine is to enter Task Mode and switch on output_1 and
+output_8 by hand, and on exit both keep running — they are back on auto,
+which runs them (recorded 2026-10-16; Cool-Down's End relies on it and checks
+it every time). Not yet recorded for the send pumps, 2 and 3. If one stays in
+manual after an exit, `Task Mode Active` stays on, **Exit Task Mode** reports
+`NOT CONFIRMED`, `11-recirc-pump-stopped` stays silenced, and
+`12-task-mode-left-on` pages after 6 hours.
 
-### /farm-monitoring — where do replies go?
+## Cool-Down (phone only)
 
-Read-only commands such as `get_current_mode` get the same useless HTTP reply.
-farmhand's UI also opens a second stream, `/farm-monitoring`, which is probably
-where their answers arrive. To look: set `FARM_LOG_MONITORING=1` (app option
-**Log farm-monitoring stream**), restart, and within ten minutes open the
-farmhand UI or send a `get_current_mode`. The bridge logs the first 20 events at
-INFO, then disconnects. It sends and publishes nothing.
+When the farm runs hot in the day: one tap stops the grow lights and keeps
+water moving through the chiller. **Start Cool-Down** puts the farm in Task
+Mode (cultivation LEDs off, recipe suspended), then switches relays 1 and 8
+back on — cultivation recirc, and nursery recirc with the chiller pump.
+**End Cool-Down** exits Task Mode and the recipe resumes.
+
+It is **not for cleanouts** — cleanouts are run from farmhand Local and never
+use these buttons — and it is **never automatic**: the bridge only starts or
+ends a cool-down when a person presses the button, from the phone.
+
+| Entity | |
+|---|---|
+| `button.greenery_s_farm_start_cool_down` | Start |
+| `button.greenery_s_farm_end_cool_down` | End |
+| `binary_sensor.greenery_s_farm_cool_down_active` | On while a cool-down is in force |
+| `binary_sensor.greenery_s_farm_cool_down_fault` | A pump could not be confirmed running — drives `21-cool-down-fault` |
+
+Every step is confirmed from the output board, as for the pump switches — never
+from farmhand's reply. **Farm Control Status** shows the progress and the
+result:
+
+| Status | Meaning |
+|---|---|
+| `Cool-Down: ACTIVE - lights off, recirc and chiller pump running` | Task Mode confirmed, relays 1 and 8 report ON, every cultivation LED relay reports OFF |
+| `Cool-Down: FAILED - Task Mode not confirmed` | The board never left auto. Fault on |
+| `Cool-Down: FAULT - <pump> not running` | Still not ON after one retry. Fault on; the farm is **left in Task Mode** for you to decide |
+| `Cool-Down: FAULT - <pump> stopped` | During a cool-down the pump reported OFF for 60 s straight. Fault on |
+| `Cool-Down: ENDED - recipe resumed` | Task Mode exit confirmed, and both pumps report ON within 15 s |
+| `Cool-Down: FAULT - <pump> stopped after exit` | Exit confirmed, but the pump did not come back on auto. Fault on |
+| `Cool-Down: NOT ENDED - Task Mode exit not confirmed, cool-down still active` | Press End again, or exit in farmhand |
+| `Cool-Down: ENDED - farm left Task Mode without End Cool-Down` | Exited some other way — farmhand, or the Exit Task Mode button. Active and Fault go off |
+| `Cool-Down: REFUSED - no recent data from the output board` | Nothing sent |
+
+If the farm was already in Task Mode with the cultivation LEDs off, Start
+skips the mode change and only switches the pumps. If any cultivation LED relay
+still reports ON at the end, the status says so instead of "lights off".
+
+**Restarting the bridge** sends nothing. Cool-Down Active comes back on only if
+it was on before the restart **and** the farm is still in Task Mode; otherwise
+it goes off. Cool-Down Fault keeps its last value.
+
+The fault alert is **critical**, because in Task Mode the chiller unit (ch23)
+stays powered: with ch8 stopped it may be running with no water flow. Task Mode
+silences `11-recirc-pump-stopped`, so during a cool-down the watchdog is the
+only alarm for a stopped recirc pump. The bridge clears the fault at the start
+of each Start and each successful End, so a new fault always pages once.
+
+### Acceptance test — on a normal day, watching the farm
+
+1. **Start Cool-Down** from the phone: the farm enters Task Mode, cultivation
+   LEDs go off, relays 1 and 8 confirmed running, status `ACTIVE`.
+2. With it active, switch relay 8 off from farmhand Local: within about 60 s
+   Fault turns on and a critical alert arrives.
+3. **End Cool-Down**: the farm exits Task Mode, relays 1 and 8 still running,
+   status `ENDED`, Active off.
+4. Restart the bridge during a cool-down: the Log shows no command sent;
+   Cool-Down Active still matches the farm.
+
+## 24-hour settings switches
+
+Three switches for farmhand's own 24-hour settings — the same flags the cloud
+app toggles, which keep a nursery trough lit, or cultivation watering cycling,
+through the recipe's night. **They replace the cloud app's toggle once the
+subscription ends.** They are recipe settings for normal operation, so they
+work in auto; Task Mode does not gate them.
+
+| Entity | farmhand settings |
+|---|---|
+| `switch.greenery_s_farm_nursery_top_24_h` | `nursery_top_red_24hr_enable`, `nursery_top_blue_24hr_enable` |
+| `switch.greenery_s_farm_nursery_bottom_24_h` | `nursery_bottom_red_24hr_enable`, `nursery_bottom_blue_24hr_enable` |
+| `switch.greenery_s_farm_cultivation_watering_24_h` | `cultivation_left_water_24hr_enable`, `cultivation_right_water_24hr_enable` |
+
+A switch sends the command farmhand Local sends when it saves a recipe card — a
+**partial** update, only the keys sent change (verified by a before/after dump,
+2026-10-15):
+
+```
+{"command":"bulk_update_settings",
+ "settings":{"nursery_bottom_red_24hr_enable":1,"nursery_bottom_blue_24hr_enable":1}}
+```
+
+**Those six keys are the only settings the bridge can ever write.** Every
+command passes one check that refuses a `bulk_update_settings` with any other
+key, or any value but 0 or 1, and logs it. `verify-repo.py` fails if the list
+changes, or if it differs from `tools/farmhand/set_24hr.py`'s.
+
+**The switch shows what the Hub reports, never what was asked.** State comes
+from `get_farm_info` — the Hub's live running settings — read every 5 minutes
+and after every change. ON means both flags in the group are 1, OFF both 0.
+If they differ (red on, blue off) the switch shows OFF and **Farm Control
+Status** reads `Nursery Top 24 h: MIXED - red/blue differ, check farmhand`.
+On a new install it shows unknown until the first reply. Until the
+subscription ends in November the cloud app can change these too; the switch
+follows within 5 minutes.
+
+After a change the bridge asks for the settings again for up to 10 seconds:
+`Nursery Bottom 24 h ON: CONFIRMED in 1.2s`, or
+`NOT CONFIRMED - farm reports nursery_bottom_red_24hr_enable=0, …`. A change is
+refused — nothing sent — if the bridge is not connected to farmhand's reply
+stream, because it could not be read back.
+
+### Acceptance test
+
+1. The three switches match `py -3 set_24hr.py status` (see
+   `tools/farmhand/README.md`).
+2. At farm night: **Nursery Bottom 24 h** ON — the bottom nursery LEDs come on,
+   `CONFIRMED`; OFF — they go off, `CONFIRMED`. The top trough is unaffected.
+3. **Cultivation Watering 24 h** toggles night cycling for both send pumps; the
+   farm reports both the left and right flags changed.
+
+## farmhand reply stream (/farm-monitoring)
+
+`/farm-control` answers `Control message received!` to everything, so it can
+never confirm a read. The real answers arrive on farmhand's second SSE stream,
+`/farm-monitoring`, as JSON events (verified 2026-10-15 for
+`read_settings_files`, `get_farm_info`, `get_version`, `get_current_mode` and
+`read_modules`):
+
+```
+{"response_to": "get_version", "response": "2.0.26", "error_message": "",
+ "controller_id": "...", "request_id": "..."}
+```
+
+The bridge keeps this stream open beside `/farm-data`, with the same
+reconnect behaviour, and logs any non-empty `error_message`. At start and every
+5 minutes it sends `get_farm_info` and `get_version` — read-only, and both sent
+by farmhand's own page on every load — and keeps:
+
+- the Hub's live settings, behind the **24-hour settings switches**
+- the version, as `sensor.greenery_s_farm_farmhand_version` (diagnostic).
+  `22-farmhand-version-changed` alerts when it changes: Task Mode, the pump
+  switches, Cool-Down and the 24-hour switches all use unsupported commands,
+  so re-test them after every farmhand update.
+
+To see the raw events, set `FARM_LOG_MONITORING=1` (app option **Log
+farm-monitoring stream**) and restart: the first 20 events are logged at INFO.
 
 ## Single point of failure: CloudGate
 
