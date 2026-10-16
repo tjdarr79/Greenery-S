@@ -640,6 +640,12 @@ Outside Task Mode the recipe engine owns the relays, so the switches show
 `online` only while `Task Mode Active` is on — and each switch needs both it
 and the bridge itself online.
 
+farmhand ends the data stream about once a minute. The switches keep the last
+known Task Mode state through that reconnect, and go unavailable only when no
+output-board data has arrived for 30 seconds, or when the bridge itself is
+offline. A frame that arrives *without* the output board greys them out at
+once.
+
 Greyed-out is not the guard. A command that arrives anyway — from an
 automation, or published by hand — is checked again at the moment it is
 handled, against output-board data no older than 30 seconds. Outside Task Mode

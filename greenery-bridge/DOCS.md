@@ -176,6 +176,10 @@ refused: **Farm Control Status** reads `REFUSED - farm not in Task Mode` and
 nothing reaches the farm. The bridge checks Task Mode again at the moment of
 every command, from output-board data no older than 30 seconds.
 
+They do not flicker when farmhand restarts its data stream (about once a
+minute): they go unavailable only after 30 seconds with no output-board data,
+or when the app itself is offline.
+
 **farmhand's reply proves nothing.** It answers `Control message received!` to
 every command, including ones it ignores. So the bridge watches the relay's own
 state in the farm's data stream and reports `CONFIRMED in 2.1s`, or

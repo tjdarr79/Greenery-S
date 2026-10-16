@@ -553,11 +553,11 @@ def run_farm_command(handler, *args):
 OUTPUT_VERIFY_TIMEOUT = 10    # seconds to wait for the relay to report the change
 OUTPUT_VERIFY_POLL = 0.5
 # A command needs a frame at most this old to decide Task Mode from; stale data
-# is not proof of anything.
+# is not proof of anything. Also how long the switches stay available with no
+# new frame: farmhand ends /farm-data every ~60 s, and the reconnect is far
+# shorter than this, so a routine reconnect no longer greys them out.
 BOARD_FRESH_SECONDS = 30
-# farmhand ends /farm-data every ~60 s. A command arriving in the reconnect gap
-# waits this long for the next frame before it is refused.
-BOARD_WAIT_SECONDS = 10
+BOARD_CHECK_SECONDS = 2       # how often watch_board_data looks
 
 
 def _board_reading(key: str):
@@ -569,10 +569,11 @@ def _board_reading(key: str):
 
 
 def output_board_lost(client):
-    """The stream dropped or a frame lacked the board: no proof of Task Mode.
+    """A frame arrived WITHOUT the output board: no proof of Task Mode.
 
-    Refuse switch commands until the next frame, and grey the switches out -
-    so a command published by hand is refused just as HA's UI would refuse it.
+    Refuse switch commands until the board is back, and grey the switches out
+    - so a command published by hand is refused just as HA's UI would refuse
+    it. Not called on a stream reconnect: see watch_board_data.
     """
     global _BOARD_FRAME_AT
     with _MODES_LOCK:
@@ -580,26 +581,37 @@ def output_board_lost(client):
     client.publish(MANUAL_CONTROL_AVAILABLE_TOPIC, "offline", qos=1, retain=True)
 
 
-def _board_fresh(wait: float = 0) -> bool:
-    """A frame no older than BOARD_FRESH_SECONDS exists, waiting up to `wait`."""
-    deadline = time.monotonic() + wait
+def _board_fresh() -> bool:
+    """The latest frame with the output board is no older than BOARD_FRESH_SECONDS."""
+    with _MODES_LOCK:
+        at = _BOARD_FRAME_AT
+    return at is not None and time.monotonic() - at <= BOARD_FRESH_SECONDS
+
+
+async def watch_board_data(client):
+    """Grey the switches out once no frame has carried the output board for
+    BOARD_FRESH_SECONDS - the farm is unreachable, not just reconnecting.
+    Until then they keep the last known Task Mode state; the next frame
+    republishes it either way."""
+    stale_reported = False
     while True:
-        with _MODES_LOCK:
-            at = _BOARD_FRAME_AT
-        if at is not None and time.monotonic() - at <= BOARD_FRESH_SECONDS:
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(OUTPUT_VERIFY_POLL)
+        await asyncio.sleep(BOARD_CHECK_SECONDS)
+        if _board_fresh():
+            stale_reported = False
+        elif not stale_reported:
+            log.warning("No output board data for %ss - pump switches unavailable",
+                        BOARD_FRESH_SECONDS)
+            client.publish(MANUAL_CONTROL_AVAILABLE_TOPIC, "offline", qos=1, retain=True)
+            stale_reported = True
 
 
 def handle_output_command(client, ch: int, want_on: bool):
     """Switch one relay channel, then VERIFY it from the relay's own state."""
     name = OUTPUT_MAP[ch][0]
 
-    # Decided now, from fresh data - not from whenever HA last saw the switch
-    # available.
-    if not _board_fresh(BOARD_WAIT_SECONDS):
+    # Decided now, from the latest data - not from whenever HA last saw the
+    # switch available - and only if that data is under BOARD_FRESH_SECONDS old.
+    if not _board_fresh():
         _control_status(client, f"{name}: REFUSED - no recent data from the output board")
         return
     if not _farm_in_task_mode():
@@ -786,7 +798,7 @@ def _cool_down_pumps_stopped(since: float):
 def _run_cool_down(client, handler):
     """Fresh board data or nothing is sent; the frame watcher stands aside
     while the handler owns the cool-down state."""
-    if not _board_fresh(BOARD_WAIT_SECONDS):
+    if not _board_fresh():
         _control_status(client, "Cool-Down: REFUSED - no recent data from the output board")
         return
     with _COOL_DOWN_LOCK:
@@ -1644,7 +1656,8 @@ async def run_forever():
 
     # Held in a variable: asyncio keeps only a weak reference to a task.
     background_tasks = [asyncio.create_task(run_farm_monitoring(mqtt_client)),
-                        asyncio.create_task(poll_farmhand(mqtt_client))]
+                        asyncio.create_task(poll_farmhand(mqtt_client)),
+                        asyncio.create_task(watch_board_data(mqtt_client))]
 
     while True:
         try:
@@ -1653,7 +1666,8 @@ async def run_forever():
             log.warning(f"SSE stream dropped ({e}); reconnecting in {RECONNECT_DELAY_SECONDS}s")
         except Exception as e:
             log.error(f"Unexpected error: {e}; reconnecting in {RECONNECT_DELAY_SECONDS}s")
-        output_board_lost(mqtt_client)
+        # The last frame stays valid through the reconnect; watch_board_data
+        # greys the switches out if no new one arrives in BOARD_FRESH_SECONDS.
         await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
 

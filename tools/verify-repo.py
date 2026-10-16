@@ -117,6 +117,7 @@ MARKERS = {
         ("run_farm_command(handler, c, *args)", "Task Mode and Cool-Down buttons off paho's thread"),
         ('(handle_control_command, "enter")', "Task Mode buttons dispatched to that thread"),
         ("FARM_LOG_MONITORING", "/farm-monitoring investigation flag"),
+        ("async def watch_board_data", "switches kept through a routine stream reconnect"),
         ("COOL_DOWN_PUMPS = (", "Cool-Down pumps named"),
         ("def handle_start_cool_down", "Start Cool-Down handler"),
         ("def handle_end_cool_down", "End Cool-Down handler"),

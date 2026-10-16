@@ -22,9 +22,11 @@ version. Safe to upgrade: no existing entity ID changes.
   start and every 5 minutes sends two read-only queries farmhand's own page
   sends on every load: `get_farm_info` and `get_version`. **Log farm-monitoring
   stream** now only logs it.
-- A pump-switch or Cool-Down press that arrives while the farm data stream is
-  reconnecting (farmhand ends it every minute) now waits up to 10 s for fresh
-  data instead of being refused.
+- Pump switches no longer go *unavailable* for a few seconds every minute when
+  farmhand restarts its data stream. They keep the last known Task Mode state
+  through the reconnect and go unavailable only after 30 s with no
+  output-board data (or with the app offline). A press is still decided from
+  the latest data at that moment, and refused if it is over 30 s old.
 - New automations `21-cool-down-fault` (critical) and
   `22-farmhand-version-changed`. Re-paste `dashboard-controls.yaml` (or its
   rendered copy) for the Cool-Down, relay 8 and 24-Hour Settings cards.
