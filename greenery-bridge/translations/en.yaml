@@ -22,9 +22,9 @@ configuration:
   log_farm_monitoring:
     name: Log farm-monitoring stream (investigation)
     description: >-
-      Logs the first 20 events of farmhand's /farm-monitoring stream after
-      each start, then disconnects. Sends and publishes nothing. Leave off
-      unless investigating.
+      Logs the first 20 events of farmhand's /farm-monitoring reply stream
+      after each start. The app reads that stream either way; this only logs
+      it. Leave off unless investigating.
   mqtt_host:
     name: MQTT broker host (override)
     description: >-

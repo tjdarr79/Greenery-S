@@ -2,8 +2,8 @@
 
 Reads your Freight Farms Greenery S local Farmhand endpoint and publishes
 everything to Home Assistant over MQTT: sensors, all 32 relay channels, module
-health, one-tap Task Mode controls, and pump switches that work only in Task
-Mode.
+health, one-tap Task Mode controls, pump switches that work only in Task Mode,
+a one-tap Cool-Down, and switches for farmhand's 24-hour settings.
 
 No farmhand cloud subscription is needed for any of it.
 
@@ -30,7 +30,7 @@ Home Assistant automatically — there is nothing to type.
 | `farm_host` | `192.168.200.200` | The Farmhand hub controller's IP |
 | `farm_port` | `3001` | Local Farmhand port |
 | `log_level` | `info` | Raise to `debug` when troubleshooting |
-| `log_farm_monitoring` | `false` | Investigation only — see [Investigating /farm-monitoring](#investigating-farm-monitoring) |
+| `log_farm_monitoring` | `false` | Investigation only — see [farmhand reply stream](#farmhand-reply-stream) |
 | `mqtt_host` | *(blank)* | Only for an external broker |
 | `mqtt_port` | `0` | Blank/0 means 1883 |
 | `mqtt_user` | *(blank)* | Only for an external broker |
@@ -152,7 +152,7 @@ back from a bad release.
 **Settings → Devices & Services → MQTT → your farm name** (`Greenery S Farm`
 unless you changed it).
 
-You should see roughly 57 entities. Note the device lives *inside* the MQTT
+You should see roughly 70 entities. Note the device lives *inside* the MQTT
 card — it is not listed at the top level of Devices & Services, which is easy
 to miss.
 
@@ -161,19 +161,24 @@ then `MQTT connected`, then a steady stream of published states.
 
 ## Pump switches (Task Mode only)
 
-Three switches turn single pumps on and off from Home Assistant:
+Four switches turn single pumps on and off from Home Assistant:
 
 | Switch | Relay channel |
 |---|---|
 | Cultivation Recirc Pump Switch | 1 |
 | Left Send Pump Switch | 2 |
 | Right Send Pump Switch | 3 |
+| Nursery Recirc and Chiller Pump Switch | 8 — also the chiller pump: off stops the chiller's flow |
 
 **They only work in Task Mode.** Outside it they show *unavailable*, and a
 command sent to one anyway — by an automation, or published by hand — is
 refused: **Farm Control Status** reads `REFUSED - farm not in Task Mode` and
 nothing reaches the farm. The bridge checks Task Mode again at the moment of
 every command, from output-board data no older than 30 seconds.
+
+They do not flicker when farmhand restarts its data stream (about once a
+minute): they go unavailable only after 30 seconds with no output-board data,
+or when the app itself is offline.
 
 **farmhand's reply proves nothing.** It answers `Control message received!` to
 every command, including ones it ignores. So the bridge watches the relay's own
@@ -184,8 +189,10 @@ A switch left on keeps its pump running until someone turns it off. In Task
 Mode farmhand's recipe is suspended, and with it its automatic protections —
 stay with the farm while a pump you started is running.
 
-Nothing is sent when the app starts or restarts, and a command left
-*retained* on the broker is ignored and cleared rather than replayed.
+No command is sent when the app starts or restarts — only the two read-only
+queries described under [farmhand reply stream](#farmhand-reply-stream) — and
+a command left *retained* on the broker is ignored and cleared rather than
+replayed.
 
 **Adding a channel** is a code change, in this order: switch it on and off from
 the farmhand UI in Task Mode and watch the equipment respond; then add the
@@ -194,25 +201,75 @@ Mode, switch it on and off from Home Assistant, watch the equipment, and see
 `CONFIRMED` both ways before relying on it. Never channel 23 — the bridge
 refuses to start with it listed.
 
-The dashboard card is at the end of `dashboard-controls.yaml`; every tap asks
-for confirmation first.
+The **Pumps (Task Mode only)** card is in `dashboard-controls.yaml`; every tap
+asks for confirmation first.
 
-## Investigating /farm-monitoring
+## Cool-Down (phone only)
 
-`log_farm_monitoring` is for finding out where farmhand answers read-only
-commands such as `get_current_mode`. When on, the app logs the first 20 events
-of the farm's second data stream, `/farm-monitoring`, after each start, then
-disconnects. It sends nothing to the farm and publishes nothing.
+For a farm running hot in the day. **Start Cool-Down** puts the farm in Task
+Mode — grow lights off, recipe suspended — then switches relays 1 and 8 back
+on: cultivation recirc, and nursery recirc with the chiller pump, so water
+keeps moving through the chiller. **End Cool-Down** exits Task Mode and the
+recipe resumes.
 
-1. Turn it on, **Save**, restart the app.
-2. Within ten minutes, make farmhand answer something — open the farmhand UI,
-   or send `{"command":"get_current_mode"}` to `/farm-control`.
-3. Read the **Log** tab for `farm-monitoring event` lines, then turn it off.
+- **Phone only, never automatic.** Nothing starts or ends a cool-down but a
+  person pressing the button.
+- **Not for cleanouts.** Cleanouts are run from farmhand Local and never use
+  these buttons.
+- **Every step is confirmed from the relays**, not from farmhand's reply.
+  **Farm Control Status** ends in `Cool-Down: ACTIVE - lights off, recirc and
+  chiller pump running`, or says what failed.
+- **Cool-Down Fault** turns on if either pump cannot be confirmed running — at
+  Start (after one retry), after End, or when one reports OFF for 60 seconds
+  during a cool-down — and `21-cool-down-fault` sends a critical alert: in Task
+  Mode the chiller stays powered and may run with no water flow. On a fault at
+  Start the farm is left in Task Mode for you to decide.
+- **Cool-Down Active** goes off whenever the farm leaves Task Mode, by any
+  route. After an app restart it comes back on only if the farm is still in
+  Task Mode; the restart sends no command.
+
+The **Cool-Down** card is at the top of `dashboard-controls.yaml`, with a
+confirmation on both buttons.
+
+## 24-hour settings
+
+Three switches — **Nursery Top 24 h**, **Nursery Bottom 24 h**, **Cultivation
+Watering 24 h** — write farmhand's own 24-hour settings, which keep a nursery
+trough lit, or cultivation watering cycling, through the recipe's night. They
+replace the farmhand cloud app's toggle once the subscription ends. They work
+in auto; Task Mode does not gate them.
+
+- Each writes its pair of flags with the command farmhand Local uses when it
+  saves a recipe card. **Those six flags are the only settings the app can
+  ever write**; it refuses and logs anything else.
+- Each shows **what the Hub reports**, read every 5 minutes and after every
+  change — never what was asked. If a pair disagrees (red on, blue off) the
+  switch shows off and Farm Control Status reads `MIXED - red/blue differ,
+  check farmhand`.
+- A change reports `CONFIRMED` or `NOT CONFIRMED - farm reports …` within 10
+  seconds.
+
+The **24-Hour Settings** card in `dashboard-controls.yaml` confirms every tap.
+`tools/farmhand/set_24hr.py` does the same from a PC if Home Assistant is down.
+
+## farmhand reply stream
+
+farmhand answers every command with `Control message received!`. The real
+answers arrive on its second stream, `/farm-monitoring`, which the app keeps
+open beside the data stream. At start and every 5 minutes it sends the two
+read-only queries farmhand's own page sends on every load, `get_farm_info` and
+`get_version`, for the 24-hour switches and the **farmhand Version** sensor.
+When the version changes, `22-farmhand-version-changed` reminds you to re-test
+Task Mode, the pump switches, Cool-Down and the 24-hour switches — all of them
+use commands Freight Farms never documented.
+
+`log_farm_monitoring` logs the first 20 events of that stream after each start,
+for investigating a new reply. Leave it off otherwise.
 
 ## Then set up the alerts
 
 This add-on delivers the data. The alerting — the notification script and the
-twenty automations — is pasted into the Home Assistant UI and is not part of
+twenty-two automations — is pasted into the Home Assistant UI and is not part of
 the add-on.
 
 Follow `README.md` in the repository, section **New install**, from step 3.
@@ -233,6 +290,27 @@ hub controller. Check `farm_host`, and confirm the controller is powered.
 for. Check `Any Module Offline` in the device. A module can keep reporting
 `connected` while its data stops advancing, and every reading downstream will
 look plausible and mean nothing.
+
+**`[WARNING] Output board 244CAB0FC00C missing from frame`** — a data frame
+arrived without the relay (output) module. No pump command can be confirmed
+without it, so the pump switches grey out at once, and a Pump switch or
+Cool-Down press is refused (`REFUSED - no recent data from the output board`)
+until the module reports again.
+
+- **A burst of these lines** — a real Output Module outage. Check the module's
+  power and cabling, starting with the breakers in the high-voltage box on the
+  exterior back. **Output Module Online** goes off, and
+  `16-module-offline-critical` sends a critical alert after 5 minutes.
+- **Single lines, one at a time, repeating on their own** — flicker: the
+  switches grey out briefly with no reconnect behind it. If it happens
+  regularly, give this case the same 30-second wait a reconnect gets: in
+  `farm_bridge.py`, `publish_binary_states()` stops calling
+  `output_board_lost()` when the board is missing, and the 30-second rule then
+  covers it.
+- **On every frame, from the very first start** — not an outage. The ID is
+  fixed in `farm_bridge.py` (`OUTPUT_DEVICE_ID`, this repository's farm), and
+  the line always prints it. A farm whose Output Module has another ID never
+  matches it: that farm's device map has not been set up.
 
 ## Credit
 

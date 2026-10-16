@@ -38,6 +38,8 @@ REQUIRED = [
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "tools/render-farm-yaml.py",
+    "tools/farmhand/README.md", "tools/farmhand/dump_settings.py",
+    "tools/farmhand/set_24hr.py",
     "repository.yaml",
     "greenery-bridge/config.yaml", "greenery-bridge/Dockerfile",
     "greenery-bridge/run.sh", "greenery-bridge/farm_bridge.py",
@@ -62,6 +64,7 @@ AUTOMATIONS = [
     "15-missed-alerts-replay", "16-module-offline-critical",
     "17-module-offline-dosing", "18-air-temp-low",
     "19-hvac-cooling-stuck", "20-send-pump-pressure",
+    "21-cool-down-fault", "22-farmhand-version-changed",
 ]
 
 # Stale files that should have been removed or moved
@@ -78,6 +81,8 @@ SHOULD_NOT_EXIST = [
     ("UNINSTALL-FARM-BRIDGE.bat", "retired to legacy/windows-installer/"),
     ("install", "retired to legacy/windows-installer/install/"),
     ("WINDOWS-INSTALL.md", "retired to legacy/windows-installer/"),
+    ("tools/dump_settings.py", "moved to tools/farmhand/"),
+    ("tools/set_24hr.py", "moved to tools/farmhand/"),
 ]
 
 # Content that proves each feature actually landed
@@ -109,8 +114,21 @@ MARKERS = {
         ("OUTPUT_VERIFY_TIMEOUT", "switch result read back from the relay"),
         ("msg.retain", "retained commands never replayed"),
         ("_FARM_COMMAND_LOCK", "one farm command at a time"),
-        ("run_farm_command(handle_control_command", "Task Mode buttons off paho's thread"),
+        ("run_farm_command(handler, c, *args)", "Task Mode and Cool-Down buttons off paho's thread"),
+        ('(handle_control_command, "enter")', "Task Mode buttons dispatched to that thread"),
         ("FARM_LOG_MONITORING", "/farm-monitoring investigation flag"),
+        ("async def watch_board_data", "switches kept through a routine stream reconnect"),
+        ("COOL_DOWN_PUMPS = (", "Cool-Down pumps named"),
+        ("def handle_start_cool_down", "Start Cool-Down handler"),
+        ("def handle_end_cool_down", "End Cool-Down handler"),
+        ("COOL_DOWN_PUMP_OFF_FAULT_SECONDS", "Cool-Down pump watchdog"),
+        ("cool_down_retained", "Cool-Down Active re-checked after a restart"),
+        ("async def stream_farm_monitoring", "persistent /farm-monitoring reader"),
+        ("LATEST_FH_SETTINGS", "live farmhand settings cached"),
+        ("def request_farm_info", "verify-after-write helper"),
+        ("FH24_WRITABLE_KEYS = (", "settings write allow-list"),
+        ("_check_settings_write(payload.get(\"settings\"))", "every command passes the allow-list"),
+        ('"greenery_s_farmhand_version"', "farmhand Version sensor"),
     ],
     "farm-alerts-script.yaml": [
         ("notify.send_message", "durable notify ENTITY path"),
@@ -140,6 +158,10 @@ MARKERS = {
         ("Pump switches (Task Mode only)", "pump switch documentation"),
         ("farmhand's reply proves nothing", "the HTTP reply is not confirmation"),
         ("### Adding a channel", "physical test before a channel is added"),
+        ("## Cool-Down (phone only)", "Cool-Down documentation"),
+        ("not for cleanouts", "Cool-Down kept out of cleanouts"),
+        ("## 24-hour settings switches", "24-hour switches documentation"),
+        ("## farmhand reply stream", "/farm-monitoring reader documented"),
     ],
     "CONTRIBUTING.md": [
         ("git merge --ff-only main", "stable only fast-forwards to main"),
@@ -173,6 +195,8 @@ MARKERS = {
         ("If either check fails", "fallback if branch selection does not work"),
         ("## Pump switches (Task Mode only)", "pump switches documented"),
         ("`log_farm_monitoring`", "monitoring option documented"),
+        ("## Cool-Down (phone only)", "Cool-Down documented"),
+        ("## 24-hour settings", "24-hour switches documented"),
     ],
     "tools/render-farm-yaml.py": [
         ("ENTITY_REF.subn", "entity IDs rewritten"),
@@ -194,6 +218,15 @@ MARKERS = {
         ("confirmation:", "confirmation guard"),
         ("button.press", "correct action - not automation.trigger"),
         ("Pumps (Task Mode only)", "pump switches card"),
+        ("title: Cool-Down", "Cool-Down card"),
+        ("Stop grow lights and start cool-down?", "Start Cool-Down confirmation"),
+        ("End cool-down and resume the recipe?", "End Cool-Down confirmation"),
+        ("title: 24-Hour Settings", "24-hour settings card"),
+        ("sensor.greenery_s_farm_farmhand_version", "farmhand version on the card"),
+    ],
+    "tools/farmhand/set_24hr.py": [
+        ("bulk_update_settings", "the 24-hour write command"),
+        ("Type yes to send", "every write asks first"),
     ],
 }
 
@@ -229,7 +262,7 @@ def main():
     for rel in REQUIRED:
         check((root / rel).is_file(), rel)
 
-    print("\n--- Automations (expect 15) ---")
+    print(f"\n--- Automations (expect {len(AUTOMATIONS)}) ---")
     adir = root / "automations"
     for name in AUTOMATIONS:
         check((adir / f"{name}.yaml").is_file(), f"automations/{name}.yaml")
@@ -289,10 +322,39 @@ def main():
                   f"MANUAL_CONTROL_CHANNELS {tuple(allowed)} has no TASK_MODE_EXCLUDE channel",
                   f"remove {sorted(set(allowed) & set(excluded))}")
             check(set(allowed) <= set(output_map), "every switchable channel is mapped")
+        cool = _module_literal(tree, "COOL_DOWN_PUMPS")
+        check(cool is not None and allowed is not None and set(cool) <= set(allowed),
+              f"COOL_DOWN_PUMPS {cool} are all switchable (physically tested) channels")
     except (OSError, SyntaxError) as e:
         check(False, "farm_bridge.py readable for the allow-list check", str(e)[:70])
         allowed, output_map = [], {}
 
+    print("\n--- Settings writes are allow-listed ---")
+    # The bridge may write these six farmhand settings and nothing else. A new
+    # key here is a decision, not an edit - so it fails until this list moves.
+    expected = {
+        "nursery_top_red_24hr_enable", "nursery_top_blue_24hr_enable",
+        "nursery_bottom_red_24hr_enable", "nursery_bottom_blue_24hr_enable",
+        "cultivation_left_water_24hr_enable", "cultivation_right_water_24hr_enable",
+    }
+    fh24_switches = {}
+    try:
+        tree = ast.parse((root / "farm_bridge.py").read_text(encoding="utf-8"))
+        writable = _module_literal(tree, "FH24_WRITABLE_KEYS")
+        groups = _module_literal(tree, "FH24_GROUPS") or {}
+        fh24_switches = _module_literal(tree, "FH24_SWITCHES") or {}
+        check(writable is not None and set(writable) == expected,
+              "FH24_WRITABLE_KEYS is exactly the six 24-hour flags", str(writable)[:70])
+        check(bool(groups) and {k for v in groups.values() for k in v} <= expected,
+              "every FH24_GROUPS key is a 24-hour flag")
+        tool = ast.parse((root / "tools/farmhand/set_24hr.py").read_text(encoding="utf-8"))
+        tool_groups = _module_literal(tool, "GROUPS") or {}
+        check(bool(tool_groups) and {k for v in tool_groups.values() for k in v} == expected,
+              "tools/farmhand/set_24hr.py writes the same six keys")
+    except (OSError, SyntaxError) as e:
+        check(False, "allow-lists readable", str(e)[:70])
+
+    print("\n--- Dashboard switches are guarded ---")
     # A switch shown without a confirmation toggles a pump on one pocket-tap.
     # Tiles also toggle on an ICON tap by default, so both actions need one.
     # A bare switch row in an entities card is a toggle with no confirmation.
@@ -332,6 +394,10 @@ def main():
                 name = output_map[ch][0]
                 ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") + "_switch"
                 check(ent in text, f"{rel}: tile for ch{ch} {name}", f"expected {ent}")
+        if rel == "dashboard-controls.yaml":
+            for name, _icon, _pair in fh24_switches.values():
+                ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+                check(ent in text, f"{rel}: tile for {name}", f"expected {ent}")
 
     print("\n--- YAML parses ---")
     bdir = root / "greenery-bridge"
@@ -346,7 +412,8 @@ def main():
 
     print("\n--- Python parses ---")
     for rel in ["farm_bridge.py", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
-                "tools/render-farm-yaml.py"]:
+                "tools/render-farm-yaml.py", "tools/farmhand/dump_settings.py",
+                "tools/farmhand/set_24hr.py"]:
         p = root / rel
         if not p.is_file():
             check(False, f"{rel} (missing)")
@@ -404,12 +471,12 @@ def main():
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 1040, f"farm_bridge.py is {n} lines (expect ~1060)",
+        check(n >= 1640, f"farm_bridge.py is {n} lines (expect ~1670)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 1049, f"README.md is {n} lines (expect ~1069)",
+        check(n >= 1190, f"README.md is {n} lines (expect ~1215)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

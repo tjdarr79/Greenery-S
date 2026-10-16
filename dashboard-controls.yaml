@@ -16,19 +16,68 @@
 # Entity IDs carry the device prefix. The doubled "farm" in the status sensor
 # is correct: device "Greenery S Farm" + entity "Farm Control Status".
 #
-# The last card, "Pumps (Task Mode only)", switches single pumps and is kept
-# apart from the Task Mode buttons. Its switches are unavailable unless the
-# farm is in Task Mode. To put it elsewhere, cut that block into its own
-# Manual card and remove its leading indentation.
+# "Cool-Down" comes first: it is the control used under stress, when the farm
+# is running hot. Phone only, never for cleanouts - see README, "Cool-Down".
+#
+# "Pumps (Task Mode only)" switches single pumps and is kept apart from the
+# Task Mode buttons. Its switches are unavailable unless the farm is in Task
+# Mode. "24-Hour Settings" writes farmhand's own 24-hour flags and works in
+# auto. To put any card elsewhere, cut its block into its own Manual card and
+# remove its leading indentation.
 #
 # 3. A tile toggles its switch on an ICON tap by default - with no
-#    confirmation. Every pump tile therefore sets icon_tap_action as well as
+#    confirmation. Every switch tile therefore sets icon_tap_action as well as
 #    tap_action, both with `confirmation:`, and hold_action: none. Keep all
 #    three when editing; verify-repo.py checks the first two.
 # ---------------------------------------------------------------------------
 
 type: vertical-stack
 cards:
+  # Lights off, recirc and chiller pump kept running. The bridge confirms each
+  # step from the relays; the result shows in "Last command" below.
+  - type: vertical-stack
+    title: Cool-Down
+    cards:
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: button
+            show_name: true
+            show_icon: true
+            entity: button.greenery_s_farm_start_cool_down
+            name: Start Cool-Down
+            icon: mdi:snowflake-thermometer
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.greenery_s_farm_start_cool_down
+              confirmation:
+                text: Stop grow lights and start cool-down?
+
+          - type: button
+            show_name: true
+            show_icon: true
+            entity: button.greenery_s_farm_end_cool_down
+            name: End Cool-Down
+            icon: mdi:play-circle
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.greenery_s_farm_end_cool_down
+              confirmation:
+                text: End cool-down and resume the recipe?
+
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.greenery_s_farm_cool_down_active
+            name: Cool-Down active
+          - entity: binary_sensor.greenery_s_farm_cool_down_fault
+            name: Cool-Down fault
+
   - type: button
     show_name: true
     show_icon: true
@@ -131,3 +180,71 @@ cards:
             text: Turn Right Send Pump on/off?
         hold_action:
           action: none
+
+      # Also carries the chiller pump: off means the chiller loses flow.
+      - type: tile
+        entity: switch.greenery_s_farm_nursery_recirc_and_chiller_pump_switch
+        name: Nursery Recirc + Chiller Pump
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Nursery Recirc and Chiller Pump on/off? Off stops chiller flow.
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Turn Nursery Recirc and Chiller Pump on/off? Off stops chiller flow.
+        hold_action:
+          action: none
+
+  # farmhand's own 24-hour flags - not Task Mode. Each switch shows what the
+  # Hub reports, read back every 5 minutes and after every change.
+  - type: grid
+    title: 24-Hour Settings
+    columns: 1
+    square: false
+    cards:
+      - type: tile
+        entity: switch.greenery_s_farm_nursery_top_24_h
+        name: Nursery Top 24 h
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Change 24-hour lighting for the nursery TOP trough?
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Change 24-hour lighting for the nursery TOP trough?
+        hold_action:
+          action: none
+
+      - type: tile
+        entity: switch.greenery_s_farm_nursery_bottom_24_h
+        name: Nursery Bottom 24 h
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Change 24-hour lighting for the nursery BOTTOM trough?
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Change 24-hour lighting for the nursery BOTTOM trough?
+        hold_action:
+          action: none
+
+      - type: tile
+        entity: switch.greenery_s_farm_cultivation_watering_24_h
+        name: Cultivation Watering 24 h
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Change 24-hour watering for BOTH cultivation send pumps?
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Change 24-hour watering for BOTH cultivation send pumps?
+        hold_action:
+          action: none
+
+      - type: tile
+        entity: sensor.greenery_s_farm_farmhand_version
+        name: farmhand version

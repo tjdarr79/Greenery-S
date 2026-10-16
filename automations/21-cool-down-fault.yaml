@@ -1,0 +1,38 @@
+alias: Farm Cool-Down Fault
+description: >-
+  Cool-Down (phone button) puts the farm in Task Mode to stop the grow lights,
+  then keeps relays 1 and 8 running: cultivation recirc, and nursery recirc
+  with the chiller pump on the same power. The bridge raises Cool-Down Fault
+  when it cannot confirm both pumps running - at Start, after End, or when
+  either reports OFF for 60 s during a cool-down - or when Start could not
+  confirm Task Mode.
+
+  Critical because the chiller unit (ch23) stays powered in Task Mode. With
+  ch8 stopped it may be running with no water flow. Task Mode also silences
+  11-recirc-pump-stopped, so during a cool-down this is the only alarm for a
+  stopped recirc pump.
+
+  Fires on OFF -> ON only. The bridge clears the fault at the start of every
+  Start and every successful End, so each new fault alerts once, and a bridge
+  or Home Assistant restart does not page again for an old one.
+
+  The farm's name is read from the bridge's device, so this needs no helper.
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_cool_down_fault
+    from: "off"
+    to: "on"
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: 🚨 Cool-Down Fault
+      notification_id: farm_cool_down_fault
+      critical: true
+      message: >-
+        {% set dev = device_id(trigger.entity_id) %}
+        {% set farm = device_attr(dev, 'name_by_user') or device_attr(dev, 'name') or 'The farm' %}
+        {{ farm }}: {{ states('sensor.greenery_s_farm_farm_control_status') }}.
+        The chiller may be running with no water flow. Check relays 1 and 8 in
+        farmhand Local, or press End Cool-Down to return the farm to its recipe.
+mode: single

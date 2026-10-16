@@ -4,3 +4,6 @@ __pycache__/
 
 # Output of tools/render-farm-yaml.py - per-farm copies, never committed
 rendered/
+
+# Output of tools/farmhand/dump_settings.py - one farm's live settings
+tools/farmhand/results/

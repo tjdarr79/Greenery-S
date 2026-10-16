@@ -4,8 +4,12 @@ Diagnostic scripts. **None of these are needed to run the bridge.** They exist
 for discovery and for re-capturing things that Freight Farms can change without
 notice.
 
-Standard library only — no `pip install` required. Both are strictly read-only:
-they issue GET requests and never change farm state.
+Standard library only — no `pip install` required. The scripts in this folder
+are strictly read-only: they issue GET requests and never change farm state.
+
+`farmhand/` holds two run-by-hand scripts that use farmhand's command channel:
+a read-only settings dump, and `set_24hr.py`, which **writes** the 24-hour
+settings. See `farmhand/README.md`.
 
 Run them on a machine that can reach the farm network.
 
