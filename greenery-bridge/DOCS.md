@@ -291,6 +291,27 @@ for. Check `Any Module Offline` in the device. A module can keep reporting
 `connected` while its data stops advancing, and every reading downstream will
 look plausible and mean nothing.
 
+**`[WARNING] Output board 244CAB0FC00C missing from frame`** — a data frame
+arrived without the relay (output) module. No pump command can be confirmed
+without it, so the pump switches grey out at once, and a Pump switch or
+Cool-Down press is refused (`REFUSED - no recent data from the output board`)
+until the module reports again.
+
+- **A burst of these lines** — a real Output Module outage. Check the module's
+  power and cabling, starting with the breakers in the high-voltage box on the
+  exterior back. **Output Module Online** goes off, and
+  `16-module-offline-critical` sends a critical alert after 5 minutes.
+- **Single lines, one at a time, repeating on their own** — flicker: the
+  switches grey out briefly with no reconnect behind it. If it happens
+  regularly, give this case the same 30-second wait a reconnect gets: in
+  `farm_bridge.py`, `publish_binary_states()` stops calling
+  `output_board_lost()` when the board is missing, and the 30-second rule then
+  covers it.
+- **On every frame, from the very first start** — not an outage. The ID is
+  fixed in `farm_bridge.py` (`OUTPUT_DEVICE_ID`, this repository's farm), and
+  the line always prints it. A farm whose Output Module has another ID never
+  matches it: that farm's device map has not been set up.
+
 ## Credit
 
 Built for a 40 ft Greenery S running at 3 Corners Farm. Shared because the
