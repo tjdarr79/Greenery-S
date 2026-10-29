@@ -427,7 +427,7 @@ def test_farmhand_unreachable_is_reported_not_raised(monkeypatch, caplog):
 # --- Home Assistant YAML ------------------------------------------------------------------------
 
 def test_stale_automation():
-    doc = yaml.safe_load((ROOT / "automations" / "23-camera-stale.yaml").read_text(encoding="utf-8"))
+    doc = yaml.safe_load((ROOT / "automations" / "24-camera-stale.yaml").read_text(encoding="utf-8"))
     [trigger] = doc["triggers"]
     assert trigger["entity_id"] == "binary_sensor.greenery_s_farm_camera_photos_stale"
     assert (trigger["from"], trigger["to"]) == ("off", "on")

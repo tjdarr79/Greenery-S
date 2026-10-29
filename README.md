@@ -147,7 +147,7 @@ that, when skipped, let ten dead automations go unnoticed indefinitely. See
 
 ### 4. Install the automations
 
-Twenty-three files in `automations/`, pasted one at a time — HA's editor rejects a
+Twenty-four files in `automations/`, pasted one at a time — HA's editor rejects a
 multi-automation list. None of them contain a phone name; that lives only in
 the script. See **Installing the automations**.
 
@@ -161,6 +161,8 @@ sensor has been quiet for a few days — see the hypothesis note under
 ### 5. Add the dashboards
 
 `farm-dashboard.yaml` (desktop) and `farm-dashboard-mobile.yaml` (phone).
+Both carry a **Dosing Tanks** card under Environmental, with the four
+**Refilled** buttons — see **Dosing tank levels**.
 
 `dashboard-cameras.yaml` is the **Cameras** card, on a view of its own — see
 **Cameras (latest photo only)**.
@@ -181,22 +183,22 @@ carry `confirmation:` or a pocket-tap will stop the farm.
 
 | File | Purpose |
 |---|---|
-| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, Task Mode control, Task-Mode-only pump switches, Cool-Down, 24-hour settings switches, the farmhand version and the latest camera photos all included — **no patch steps** |
+| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, Task Mode control, Task-Mode-only pump switches, Cool-Down, 24-hour settings switches, the farmhand version, the dosing tank levels and the latest camera photos all included — **no patch steps** |
 | `farm-bridge.env.example` | Copy to `farm-bridge.env` and fill in |
 | `farm-bridge.service` | systemd unit (Linux) |
 | `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
-| `automations/01`–`23` | Alert automations, pasted into HA one at a time |
+| `automations/01`–`24` | Alert automations, pasted into HA one at a time |
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
-| `farm-dashboard.yaml` | Desktop dashboard |
-| `farm-dashboard-mobile.yaml` | Phone dashboard |
+| `farm-dashboard.yaml` | Desktop dashboard, with the Dosing Tanks card under Environmental |
+| `farm-dashboard-mobile.yaml` | Phone dashboard, the same cards stacked |
 | `dashboard-controls.yaml` | Control card: Cool-Down, Task Mode, the Task-Mode-only pump switches, 24-hour settings, a button to the Cameras view |
 | `dashboard-cameras.yaml` | Cameras card: the latest photo from each of the six cameras, for its own view |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
 | `tools/render-farm-yaml.py` | Writes a farm's own copy of every automation and dashboard, for any farm name other than the default |
-| `tools/farmhand/` | Run-by-hand farmhand scripts: read-only dumps of settings and camera photos, dosing-tank and HVAC loggers, and the 24-hour switch for when HA is down — see its README |
-| `tests/` | `pytest -q tests` — the camera code against real farmhand captures in `tests/fixtures/farmhand/` |
+| `tools/farmhand/` | Run-by-hand farmhand scripts: read-only dumps of settings and camera photos, a read-only dosing tank level check, an HVAC logger, and the 24-hour switch for when HA is down — see its README |
+| `tests/` | `pytest -q tests` — the dosing tank logic, and the camera code against real farmhand captures in `tests/fixtures/farmhand/`. Without pytest, the dosing tests alone: `python -m unittest discover -s tests -p "test_dosing*.py" -q` |
 | `greenery-bridge/` | **The Home Assistant app** — how the bridge is installed |
 | `repository.yaml` | Makes this repo installable as an HA add-on repository |
 | `CONTRIBUTING.md` | Branches and releases: `main` for development, `stable` for customer farms |
@@ -218,7 +220,7 @@ dashboard's live displayed values. Do not change without re-verifying.
 | `94E68607D090` | environmental | Farm climate | CO2, RH, air temp |
 | `8C4B14715024` | input | Depth/pressure | analog_1 = Cultivation depth (raw, uncalibrated offset), analog_2 = Nursery depth, analog_3 = left send pressure, analog_4 = right send pressure |
 | `244CAB0FC00C` | output | 32-channel relay | **Not yet mapped to function** — not included in this bridge |
-| `E831CDC7E680` | input | Idle/unused | All zero, not included |
+| `E831CDC7E680` | input | **Dosing tank levels** | digital_1 = Nutrient A, digital_2 = Nutrient B, digital_3 = pH Down, digital_4 = Boost / pH Up. 0 = ok — see **Dosing tank levels** |
 
 **Known caveat:** Cultivation depth sensor (`analog_1`) needs recalibration —
 raw value does not match Farmhand's displayed % until fixed. Published as
@@ -396,7 +398,7 @@ level of Devices & Services. Easy to miss when you are looking for it by name.
 
 ## Alert automations
 
-Twenty-three phone-notification automations live in `automations/`, one file each,
+Twenty-four phone-notification automations live in `automations/`, one file each,
 covering the thresholds actually needed for daily operation. They notify
 via Home Assistant's Companion App, not email/SMS.
 
@@ -428,7 +430,8 @@ deployed — see "Notification routing" below.**
 | `20-send-pump-pressure.yaml` | Send pump on with low line pressure | 2 min | Clog, air lock, or failed impeller. Crop stops being irrigated |
 | `21-cool-down-fault.yaml` | Cool-Down Fault turns on | immediate | **Critical.** A recirc or chiller pump not confirmed running during Cool-Down — the chiller may run with no flow. Task Mode silences 11, so this is the only recirc alarm then |
 | `22-farmhand-version-changed.yaml` | farmhand Version changes | immediate | Task Mode, pump switches, Cool-Down and 24-hour switches use unsupported commands — re-test them |
-| `23-camera-stale.yaml` | Camera Photos Stale turns on | immediate, at most once per 24 h | A camera's latest photo is over 2.5 photo cycles (7.5 h) old — the camera or farmhand's photo cycle has stopped. Not critical |
+| `23-dosing-tank-alert.yaml` | The bridge sends a dosing tank alert | as sent | Tank low (every 12 h while low), sensor unstable (at most daily), sensor silent 21 days (weekly). Timing is decided in the bridge — see **Dosing tank levels** |
+| `24-camera-stale.yaml` | Camera Photos Stale turns on | immediate, at most once per 24 h | A camera's latest photo is over 2.5 photo cycles (7.5 h) old — the camera or farmhand's photo cycle has stopped. Not critical |
 
 ### Water temp measurement caveat (important)
 
@@ -853,6 +856,54 @@ stream, because it could not be read back.
 3. **Cultivation Watering 24 h** toggles night cycling for both send pumps; the
    farm reports both the left and right flags changed.
 
+## Dosing tank levels
+
+The four 1-gallon dosing tanks each have an optical level sensor that trips
+when the tank is almost empty. farmhand shows them on its Environmental card;
+the bridge reads the same four inputs from module `E831CDC7E680` and the
+dashboards show them under **Environmental**, in farmhand's order:
+
+| Tank (owner's product) | Input | Entities |
+|---|---|---|
+| Nutrient A (Form) | `digital_1` | `binary_sensor.greenery_s_farm_nutrient_a_level`, `…_nutrient_a_sensor_fault`, `sensor.…_nutrient_a_days_since_refill`, `button.…_nutrient_a_refilled` |
+| Nutrient B (Grow) | `digital_2` | `…_nutrient_b_*` |
+| pH Down | `digital_3` | `…_ph_down_*` |
+| Boost / pH Up (Boost) | `digital_4` | `…_boost_ph_up_*` |
+
+Owner tests on 2026-10-29 (`tools/farmhand/dosing_levels.py`) set the design:
+
+| Finding | Design |
+|---|---|
+| 0 = ok; low assumed 1, not yet seen | `dosing_level_low_value`, default 1. The first real low confirms it |
+| Corroded connectors flicker (Boost 1 on 5 of 5, Grow 2 of 10 after cleaning) | A 10-minute window decides: Low at ≥ 80 % low, OK at ≤ 20 %, hold between. More than 20 changes in an hour raises **Sensor Fault** and holds the level |
+| An unplugged or dead sensor reads a steady 0 = ok, in farmhand too | **Refilled** buttons and a silent-sensor alert: no Low and no Refilled for 21 days → *"check the sensor and its connector"*, weekly |
+| Grow's plug is broken by corrosion | Nutrient B reads OK whatever its level until the plug is replaced. Check it by eye |
+
+**Alerts are timed by the bridge**, not by Home Assistant: Low every 12 h while
+low, Sensor Fault at most daily, silent sensor weekly. The timers are retained
+on the broker, so a restart neither repeats nor forgets an alert, and the tank
+names come from the app's options. `23-dosing-tank-alert` only delivers them
+through `script.farm_alerts`. None is critical, and there is no alert for
+*unavailable* (module missing for more than 60 s).
+
+Everything publishes on change only: nothing reaches the recorder while the
+tanks sit full. The full behaviour and every option are in
+`greenery-bridge/DOCS.md`, *Dosing tank levels*.
+
+### Acceptance test — on the farm
+
+1. With every tank full, for 30 minutes: four **OK** under Environmental,
+   matching farmhand. No alerts.
+2. Restart the app: no alerts.
+3. **Polarity.** The next time farmhand shows a tank low, Home Assistant shows
+   the same tank **Problem** within about 10 minutes and sends one alert. If
+   it shows the opposite of farmhand, set `dosing_level_low_value: 0` and
+   retest.
+4. Press a **Refilled** button: that tank's Days Since Refill goes to 0.
+5. Recorder: under 10 rows an hour for all dosing tank entities combined. In
+   **History** they change only when a tank goes low or is refilled, a sensor
+   faults, or a day passes on Days Since Refill.
+
 ## farmhand reply stream (/farm-monitoring)
 
 `/farm-control` answers `Control message received!` to everything, so it can
@@ -896,7 +947,7 @@ against storing photos (2026-10-29).
 | `camera.greenery_s_farm_cultivation_right_camera` | `sensor.greenery_s_farm_cultivation_right_photo_time` |
 
 Plus `binary_sensor.greenery_s_farm_camera_photos_stale`, which drives
-`23-camera-stale`.
+`24-camera-stale`.
 
 ### How farmhand delivers photos
 
@@ -942,7 +993,7 @@ The request is read-only, and farmhand's own page sends it on every load.
 2.5 photo cycles — 7.5 h at farmhand's `image_cycle_time`, read live from
 `get_farm_info`. Its `stale_cameras` attribute names them. A camera farmhand
 lists but that never sends a photo counts from the bridge's start.
-`23-camera-stale` alerts (not critical) on OFF → ON, at most once per 24 h.
+`24-camera-stale` alerts (not critical) on OFF → ON, at most once per 24 h.
 
 **Recorder.** Photo Time and Camera Photos Stale change only with a new photo
 or a stale camera — a few rows a day. HA may also write a row per camera every

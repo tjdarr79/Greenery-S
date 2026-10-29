@@ -39,3 +39,40 @@ configuration:
   mqtt_password:
     name: MQTT password (override)
     description: Only for a broker outside Home Assistant.
+  dosing_tank_names:
+    name: Dosing tank names
+    description: >-
+      One per tank, in farmhand's order. They name the Level, Sensor Fault,
+      Days Since Refill and Refilled entities. Like Farm name, set them before
+      the first start: they decide the entity IDs, and the dashboards expect
+      the defaults.
+  dosing_tank_inputs:
+    name: Dosing tank inputs
+    description: >-
+      Which digital input of module E831CDC7E680 each tank's level sensor is
+      wired to, in the same order. Swap two here to fix a swapped wire.
+  dosing_tanks_enabled:
+    name: Dosing tanks in use
+    description: >-
+      One per tank. A tank turned off gets no entities and no alerts - for a
+      farm not using tank 4.
+  dosing_level_low_value:
+    name: Dosing tank low reads
+    description: >-
+      The raw input value that means "tank low". 1 unless Home Assistant shows
+      the opposite of farmhand - then set 0. See DOCS, "Dosing tank levels".
+  dosing_level_window_s:
+    name: Dosing tank level window (seconds)
+    description: >-
+      Low means 80% of the readings in this window read low; ok means 20% or
+      fewer. Longer is steadier and slower.
+  dosing_sensor_fault_changes_per_hour:
+    name: Dosing tank Sensor Fault above (changes/hour)
+    description: >-
+      A sensor whose reading flips more often than this in an hour - usually
+      a corroded connector - raises its Sensor Fault and its level is held.
+  dosing_silent_days:
+    name: Dosing tank silent-sensor alert after (days)
+    description: >-
+      A tank that has not reported low, and has had no Refilled press, in this
+      many days sends a reminder to check its sensor. A dead sensor reads ok.

@@ -21,18 +21,144 @@ views:
           # -----------------------------------------------------------------
           - type: horizontal-stack
             cards:
-              # PANEL 1: ENVIRONMENTAL
-              - type: entities
-                title: Environmental
-                icon: mdi:thermometer
-                show_header_toggle: false
-                entities:
-                  - entity: sensor.greenery_s_farm_farm_co2
-                    name: CO2
-                  - entity: sensor.greenery_s_farm_farm_humidity
-                    name: Humidity
-                  - entity: sensor.greenery_s_farm_farm_air_temp
-                    name: Air Temp
+              # PANEL 1: ENVIRONMENTAL, with the dosing tanks below it
+              - type: vertical-stack
+                cards:
+                  - type: entities
+                    title: Environmental
+                    icon: mdi:thermometer
+                    show_header_toggle: false
+                    entities:
+                      - entity: sensor.greenery_s_farm_farm_co2
+                        name: CO2
+                      - entity: sensor.greenery_s_farm_farm_humidity
+                        name: Humidity
+                      - entity: sensor.greenery_s_farm_farm_air_temp
+                        name: Air Temp
+
+                  # DOSING TANKS - farmhand shows these under air temp / RH / CO2.
+                  # OK, or Problem (red) when a tank is low. A dead or unplugged sensor
+                  # ALSO reads OK - press Refilled after every refill, so the bridge can
+                  # tell a working sensor from a silent one. See DOCS.md, "Dosing tank levels".
+                  - type: entities
+                    title: Dosing Tanks
+                    icon: mdi:cup-water
+                    state_color: true
+                    show_header_toggle: false
+                    entities:
+                      - entity: binary_sensor.greenery_s_farm_nutrient_a_level
+                        name: Nutrient A
+                      - entity: binary_sensor.greenery_s_farm_nutrient_b_level
+                        name: Nutrient B
+                      - entity: binary_sensor.greenery_s_farm_ph_down_level
+                        name: pH Down
+                      - entity: binary_sensor.greenery_s_farm_boost_ph_up_level
+                        name: Boost / pH Up
+                      # A flickering sensor (corroded connector) - shown only while it is on.
+                      - type: conditional
+                        conditions:
+                          - entity: binary_sensor.greenery_s_farm_nutrient_a_sensor_fault
+                            state: "on"
+                        row:
+                          entity: binary_sensor.greenery_s_farm_nutrient_a_sensor_fault
+                          name: Nutrient A sensor unstable
+                      - type: conditional
+                        conditions:
+                          - entity: binary_sensor.greenery_s_farm_nutrient_b_sensor_fault
+                            state: "on"
+                        row:
+                          entity: binary_sensor.greenery_s_farm_nutrient_b_sensor_fault
+                          name: Nutrient B sensor unstable
+                      - type: conditional
+                        conditions:
+                          - entity: binary_sensor.greenery_s_farm_ph_down_sensor_fault
+                            state: "on"
+                        row:
+                          entity: binary_sensor.greenery_s_farm_ph_down_sensor_fault
+                          name: pH Down sensor unstable
+                      - type: conditional
+                        conditions:
+                          - entity: binary_sensor.greenery_s_farm_boost_ph_up_sensor_fault
+                            state: "on"
+                        row:
+                          entity: binary_sensor.greenery_s_farm_boost_ph_up_sensor_fault
+                          name: Boost / pH Up sensor unstable
+                      - type: section
+                        label: Days since refill
+                      - entity: sensor.greenery_s_farm_nutrient_a_days_since_refill
+                        name: Nutrient A
+                      - entity: sensor.greenery_s_farm_nutrient_b_days_since_refill
+                        name: Nutrient B
+                      - entity: sensor.greenery_s_farm_ph_down_days_since_refill
+                        name: pH Down
+                      - entity: sensor.greenery_s_farm_boost_ph_up_days_since_refill
+                        name: Boost / pH Up
+
+                  # Refilled: one tap per tank, each confirmed.
+                  - type: grid
+                    columns: 4
+                    square: false
+                    cards:
+                      - type: button
+                        show_name: true
+                        show_icon: true
+                        entity: button.greenery_s_farm_nutrient_a_refilled
+                        name: Nutrient A
+                        icon: mdi:water-plus
+                        tap_action:
+                          action: perform-action
+                          perform_action: button.press
+                          target:
+                            entity_id: button.greenery_s_farm_nutrient_a_refilled
+                          confirmation:
+                            text: Nutrient A tank refilled? Resets its Days Since Refill to 0.
+                        hold_action:
+                          action: none
+                      - type: button
+                        show_name: true
+                        show_icon: true
+                        entity: button.greenery_s_farm_nutrient_b_refilled
+                        name: Nutrient B
+                        icon: mdi:water-plus
+                        tap_action:
+                          action: perform-action
+                          perform_action: button.press
+                          target:
+                            entity_id: button.greenery_s_farm_nutrient_b_refilled
+                          confirmation:
+                            text: Nutrient B tank refilled? Resets its Days Since Refill to 0.
+                        hold_action:
+                          action: none
+                      - type: button
+                        show_name: true
+                        show_icon: true
+                        entity: button.greenery_s_farm_ph_down_refilled
+                        name: pH Down
+                        icon: mdi:water-plus
+                        tap_action:
+                          action: perform-action
+                          perform_action: button.press
+                          target:
+                            entity_id: button.greenery_s_farm_ph_down_refilled
+                          confirmation:
+                            text: pH Down tank refilled? Resets its Days Since Refill to 0.
+                        hold_action:
+                          action: none
+                      - type: button
+                        show_name: true
+                        show_icon: true
+                        entity: button.greenery_s_farm_boost_ph_up_refilled
+                        name: Boost
+                        icon: mdi:water-plus
+                        tap_action:
+                          action: perform-action
+                          perform_action: button.press
+                          target:
+                            entity_id: button.greenery_s_farm_boost_ph_up_refilled
+                          confirmation:
+                            text: Boost / pH Up tank refilled? Resets its Days Since Refill to 0.
+                        hold_action:
+                          action: none
 
               # PANEL 2: NURSERY
               - type: entities

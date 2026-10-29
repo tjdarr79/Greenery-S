@@ -40,8 +40,9 @@ REQUIRED = [
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "tools/render-farm-yaml.py",
     "tools/farmhand/README.md", "tools/farmhand/dump_settings.py",
-    "tools/farmhand/set_24hr.py", "tools/farmhand/dump_cameras.py",
-    "tools/farmhand/dosing_levels.py", "tools/farmhand/hvac_logger.py",
+    "tools/farmhand/set_24hr.py", "tools/farmhand/dosing_levels.py",
+    "tools/farmhand/dump_cameras.py", "tools/farmhand/hvac_logger.py",
+    "tests/test_dosing_tanks.py",
     "tests/conftest.py", "tests/test_cameras.py",
     "tests/fixtures/farmhand/README.md",
     "tests/fixtures/farmhand/farm_images_sample.sse",
@@ -72,7 +73,7 @@ AUTOMATIONS = [
     "17-module-offline-dosing", "18-air-temp-low",
     "19-hvac-cooling-stuck", "20-send-pump-pressure",
     "21-cool-down-fault", "22-farmhand-version-changed",
-    "23-camera-stale",
+    "23-dosing-tank-alert", "24-camera-stale",
 ]
 
 # Stale files that should have been removed or moved
@@ -137,6 +138,18 @@ MARKERS = {
         ("FH24_WRITABLE_KEYS = (", "settings write allow-list"),
         ("_check_settings_write(payload.get(\"settings\"))", "every command passes the allow-list"),
         ('"greenery_s_farmhand_version"', "farmhand Version sensor"),
+        ('DOSING_DEVICE_ID = "E831CDC7E680"', "dosing tank level module"),
+        ("class DosingMonitor", "dosing tank debounce, fault, backstop, alerts"),
+        ("DOSING_LOW_ON_PERCENT = 80", "low only from a mostly-low window"),
+        ("# Never decided from a partial window.", "no decision from a partial window"),
+        ("DOSING_STALE_SECONDS = 60", "tanks unavailable after 60 s, not on a reconnect"),
+        ("async def watch_dosing_tanks", "time-driven availability and alert repeats"),
+        ("DOSING_BACKSTOP_REPEAT_SECONDS", "silent-sensor backstop"),
+        ("}), qos=1, retain=False)", "dosing alerts never retained"),
+        ("DOSING.on_frame(client, payload)", "tank levels read from every frame"),
+        ("DOSING.publish_discovery(client, availability_topic)", "dosing tank discovery"),
+        ("DOSING.subscribe(c)", "Refilled buttons and tank memory subscribed"),
+        ("DOSING.memory_retained(", "alert timers restored after a restart"),
         ("async def stream_farm_images", "persistent /farm-images reader"),
         ('{"command": "get_last_images_local_only"}', "photo request"),
         ("CAMERA_POLL_SECONDS = 1800", "photos asked for every 30 min"),
@@ -181,6 +194,9 @@ MARKERS = {
         ("not for cleanouts", "Cool-Down kept out of cleanouts"),
         ("## 24-hour settings switches", "24-hour switches documentation"),
         ("## farmhand reply stream", "/farm-monitoring reader documented"),
+        ("## Dosing tank levels", "dosing tank levels documentation"),
+        ("### Acceptance test — on the farm", "dosing tank acceptance test"),
+        ("`23-dosing-tank-alert.yaml`", "dosing tank alert in the automation table"),
         ("## Cameras (latest photo only)", "cameras documentation"),
     ],
     "CONTRIBUTING.md": [
@@ -195,6 +211,9 @@ MARKERS = {
         ("export FARM_NAME=\"$(bashio::config 'farm_name')\"", "farm name passed to the bridge"),
         ("FARM_CONTROL_URL", "Task Mode endpoint follows farm_host"),
         ("FARM_LOG_MONITORING", "monitoring investigation reachable from the app"),
+        ("export FARM_DOSING_TANK_NAMES=", "tank names passed to the bridge"),
+        ("export FARM_DOSING_LEVEL_LOW_VALUE=", "tank polarity passed to the bridge"),
+        ("export FARM_DOSING_SILENT_DAYS=", "backstop days passed to the bridge"),
     ],
     "greenery-bridge/config.yaml": [
         ("mqtt:want", "MQTT service declared"),
@@ -202,10 +221,16 @@ MARKERS = {
         ("farm_name: Greenery S Farm", "legacy default - upgrades are not renamed"),
         ("farm_name: str(1,)", "farm name can never be blank"),
         ("log_farm_monitoring: false", "monitoring investigation off by default"),
+        ("dosing_level_low_value: 1", "tank low reads 1 by default"),
+        ("dosing_level_low_value: int(0,1)", "polarity option is 0 or 1"),
+        ("- match(^digital_[0-9]+$)", "tank inputs are digital inputs"),
     ],
     "greenery-bridge/translations/en.yaml": [
         ("farm_name:", "farm name is a labelled field"),
         ("log_farm_monitoring:", "monitoring option is a labelled field"),
+        ("dosing_tank_names:", "tank names are a labelled field"),
+        ("dosing_level_low_value:", "polarity option is a labelled field"),
+        ("dosing_silent_days:", "backstop option is a labelled field"),
     ],
     "greenery-bridge/DOCS.md": [
         ("`farm_name`", "farm name documented"),
@@ -217,6 +242,10 @@ MARKERS = {
         ("`log_farm_monitoring`", "monitoring option documented"),
         ("## Cool-Down (phone only)", "Cool-Down documented"),
         ("## 24-hour settings", "24-hour switches documented"),
+        ("## Dosing tank levels", "dosing tank levels documented"),
+        ("### A dead sensor reads OK", "a dead sensor reads ok, stated"),
+        ("### If Home Assistant reads backwards", "polarity flip documented"),
+        ("### Flicker and Sensor Fault", "flicker and fault documented"),
         ("## Cameras", "cameras documented"),
         ("Only the latest photo is kept", "no photo history, stated"),
         ("- camera", "recorder exclude documented"),
@@ -254,6 +283,23 @@ MARKERS = {
         ("show_state: false", "photo only, no state text"),
         ("action: more-info", "tap opens the photo full size"),
         ("binary_sensor.greenery_s_farm_camera_photos_stale", "stale row"),
+    ],
+    "farm-dashboard.yaml": [
+        ("title: Dosing Tanks", "Dosing Tanks card"),
+        ("# PANEL 1: ENVIRONMENTAL, with the dosing tanks below it", "tanks under Environmental"),
+        ("state_color: true", "low tank shown red"),
+    ],
+    "farm-dashboard-mobile.yaml": [
+        ("title: Dosing Tanks", "Dosing Tanks card"),
+        ("state_color: true", "low tank shown red"),
+    ],
+    "automations/23-dosing-tank-alert.yaml": [
+        ("topic: farm/dosing_tanks/alert", "listens on the bridge's alert topic"),
+        ("trigger.payload_json.message", "delivers the bridge's message"),
+    ],
+    "tools/farmhand/dosing_levels.py": [
+        ('MODULE = "E831CDC7E680"', "reads the dosing tank module"),
+        ("/farm-data", "reads the data stream only"),
     ],
     "tools/farmhand/set_24hr.py": [
         ("bulk_update_settings", "the 24-hour write command"),
@@ -385,6 +431,29 @@ def main():
     except (OSError, SyntaxError) as e:
         check(False, "allow-lists readable", str(e)[:70])
 
+    print("\n--- Dosing tank defaults and alert topic in step ---")
+    # The app's option defaults and the bridge's own must agree, and automation
+    # 23 must listen where the bridge sends - a mismatch there drops every
+    # dosing alert without an error.
+    dosing_names = []
+    try:
+        tree = ast.parse((root / "farm_bridge.py").read_text(encoding="utf-8"))
+        dosing_names = list(_module_literal(tree, "DOSING_DEFAULT_NAMES") or [])
+        inputs = list(_module_literal(tree, "DOSING_DEFAULT_INPUTS") or [])
+        opts = yaml.safe_load((root / "greenery-bridge/config.yaml").read_text(encoding="utf-8"))["options"]
+        check(len(dosing_names) == 4 and opts.get("dosing_tank_names") == dosing_names,
+              "dosing_tank_names default matches the bridge", f"{opts.get('dosing_tank_names')}")
+        check(opts.get("dosing_tank_inputs") == inputs,
+              "dosing_tank_inputs default matches the bridge", f"{opts.get('dosing_tank_inputs')}")
+        check(opts.get("dosing_tanks_enabled") == [True] * 4, "every dosing tank enabled by default")
+        base = _module_literal(tree, "MQTT_BASE_TOPIC")
+        auto = yaml.safe_load((root / "automations/23-dosing-tank-alert.yaml").read_text(encoding="utf-8"))
+        topics = [t.get("topic") for t in auto.get("triggers", [])]
+        check(topics == [f"{base}/dosing_tanks/alert"],
+              "automation 23 listens on the bridge's DOSING_ALERT_TOPIC", f"{topics}")
+    except (OSError, SyntaxError, KeyError, TypeError, yaml.YAMLError) as e:
+        check(False, "dosing tank defaults readable", str(e)[:70])
+
     print("\n--- Dashboard switches are guarded ---")
     # A switch shown without a confirmation toggles a pump on one pocket-tap.
     # Tiles also toggle on an ICON tap by default, so both actions need one.
@@ -397,10 +466,15 @@ def main():
             continue   # reported by the parse checks
         text = p.read_text(encoding="utf-8", errors="replace")
         bare, unguarded, n = [], [], 0
+        presses, unconfirmed = 0, []
 
         def walk(node):
-            nonlocal n
+            nonlocal n, presses
             if isinstance(node, dict):
+                if node.get("perform_action") == "button.press":
+                    presses += 1
+                    if not node.get("confirmation"):
+                        unconfirmed.append(str((node.get("target") or {}).get("entity_id")))
                 ent = node.get("entity")
                 if isinstance(ent, str) and ent.startswith("switch."):
                     n += 1
@@ -416,6 +490,15 @@ def main():
                     walk(v)
 
         walk(doc)
+        if presses:
+            check(not unconfirmed, f"{rel}: every button press asks for confirmation",
+                  ", ".join(unconfirmed))
+        if rel != "dashboard-controls.yaml" and dosing_names:
+            for name in dosing_names:
+                base = "greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+                for ent in (f"binary_sensor.{base}_level", f"binary_sensor.{base}_sensor_fault",
+                            f"sensor.{base}_days_since_refill", f"button.{base}_refilled"):
+                    check(ent in text, f"{rel}: {ent}")
         if n or bare:
             check(not unguarded and not bare,
                   f"{rel}: every switch tap and icon tap asks for confirmation",
@@ -466,9 +549,9 @@ def main():
     print("\n--- Python parses ---")
     for rel in ["farm_bridge.py", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
                 "tools/render-farm-yaml.py", "tools/farmhand/dump_settings.py",
-                "tools/farmhand/set_24hr.py", "tools/farmhand/dump_cameras.py",
-                "tools/farmhand/dosing_levels.py", "tools/farmhand/hvac_logger.py",
-                "tests/conftest.py", "tests/test_cameras.py"]:
+                "tools/farmhand/set_24hr.py", "tools/farmhand/dosing_levels.py",
+                "tools/farmhand/dump_cameras.py", "tools/farmhand/hvac_logger.py",
+                "tests/test_dosing_tanks.py", "tests/conftest.py", "tests/test_cameras.py"]:
         p = root / rel
         if not p.is_file():
             check(False, f"{rel} (missing)")
@@ -526,12 +609,12 @@ def main():
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 2000, f"farm_bridge.py is {n} lines (expect ~2050)",
+        check(n >= 2570, f"farm_bridge.py is {n} lines (expect ~2605)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 1300, f"README.md is {n} lines (expect ~1325)",
+        check(n >= 1345, f"README.md is {n} lines (expect ~1375)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

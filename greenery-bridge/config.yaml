@@ -1,6 +1,6 @@
 ---
 name: Greenery S Farm Bridge
-version: "1.4.0"
+version: "1.5.0"
 slug: greenery_bridge
 description: >-
   Publishes Freight Farms Greenery S sensors, relay states and Task Mode
@@ -37,6 +37,27 @@ options:
   mqtt_port: 0
   mqtt_user: ""
   mqtt_password: ""
+  # Dosing tank level sensors, in farmhand's order. Each list is one entry per
+  # tank. The names decide the entity IDs at first sight, like farm_name.
+  dosing_tank_names:
+    - Nutrient A
+    - Nutrient B
+    - pH Down
+    - Boost / pH Up
+  dosing_tank_inputs:
+    - digital_1
+    - digital_2
+    - digital_3
+    - digital_4
+  dosing_tanks_enabled:
+    - true
+    - true
+    - true
+    - true
+  dosing_level_low_value: 1
+  dosing_level_window_s: 600
+  dosing_sensor_fault_changes_per_hour: 20
+  dosing_silent_days: 21
 
 schema:
   farm_name: str(1,)
@@ -48,3 +69,13 @@ schema:
   mqtt_port: int(0,65535)?
   mqtt_user: str?
   mqtt_password: password?
+  dosing_tank_names:
+    - str
+  dosing_tank_inputs:
+    - match(^digital_[0-9]+$)
+  dosing_tanks_enabled:
+    - bool
+  dosing_level_low_value: int(0,1)
+  dosing_level_window_s: int(60,3600)
+  dosing_sensor_fault_changes_per_hour: int(1,3600)
+  dosing_silent_days: int(1,365)
