@@ -33,7 +33,7 @@ REQUIRED = [
     "README.md", "LICENSE", "requirements.txt",
     "CONTRIBUTING.md",
     "farm_bridge.py", "farm-bridge.env.example", "farm-bridge.service",
-    "farm-alerts-script.yaml", "dashboard-controls.yaml",
+    "farm-alerts-script.yaml", "dashboard-controls.yaml", "dashboard-task-mode.yaml",
     "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
@@ -224,6 +224,13 @@ MARKERS = {
         ("title: 24-Hour Settings", "24-hour settings card"),
         ("sensor.greenery_s_farm_farmhand_version", "farmhand version on the card"),
     ],
+    "dashboard-task-mode.yaml": [
+        ("button.press", "correct action - not automation.trigger"),
+        ("Put the farm in TASK MODE?", "Enter Task Mode confirmation"),
+        ("Return the farm to automatic recipe control?", "Return to Auto confirmation"),
+        ("title: Pump Status", "pump status card"),
+        ("Pumps (Task Mode only)", "pump switches card"),
+    ],
     "tools/farmhand/set_24hr.py": [
         ("bulk_update_settings", "the 24-hour write command"),
         ("Type yes to send", "every write asks first"),
@@ -358,7 +365,8 @@ def main():
     # A switch shown without a confirmation toggles a pump on one pocket-tap.
     # Tiles also toggle on an ICON tap by default, so both actions need one.
     # A bare switch row in an entities card is a toggle with no confirmation.
-    for rel in ["dashboard-controls.yaml", "farm-dashboard.yaml", "farm-dashboard-mobile.yaml"]:
+    for rel in ["dashboard-controls.yaml", "dashboard-task-mode.yaml",
+                "farm-dashboard.yaml", "farm-dashboard-mobile.yaml"]:
         p = root / rel
         try:
             doc = yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))

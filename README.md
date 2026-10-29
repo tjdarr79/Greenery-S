@@ -186,6 +186,7 @@ carry `confirmation:` or a pocket-tap will stop the farm.
 | `farm-dashboard.yaml` | Desktop dashboard |
 | `farm-dashboard-mobile.yaml` | Phone dashboard |
 | `dashboard-controls.yaml` | Control card: Cool-Down, Task Mode, the Task-Mode-only pump switches, 24-hour settings |
+| `dashboard-task-mode.yaml` | Standalone phone dashboard: Task Mode status, Enter/Return buttons, every pump's relay state, pump switches (shown only in Task Mode) |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |

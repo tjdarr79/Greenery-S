@@ -1,0 +1,215 @@
+# ---------------------------------------------------------------------------
+# TASK MODE DASHBOARD - its own phone dashboard, same idea as Cool-Down.
+#
+# Settings -> Dashboards -> Add Dashboard -> "New dashboard from scratch",
+# name it "Task Mode", open it, three dots -> Edit -> three dots ->
+# Raw configuration editor, replace everything with this file, Save.
+#
+# Top to bottom: is the farm in Task Mode and did the last press take,
+# the two buttons, what every pump is actually doing, then the pump
+# switches - shown only while the farm IS in Task Mode, since the bridge
+# makes them unavailable otherwise.
+#
+# Same rules as dashboard-controls.yaml: every button and switch carries
+# `confirmation:`, buttons use `button.press` with an explicit target, and
+# every switch tile guards tap_action AND icon_tap_action. verify-repo.py
+# checks the switches.
+#
+# Other farms: paste the copy tools/render-farm-yaml.py writes, not this one.
+# ---------------------------------------------------------------------------
+
+title: Task Mode
+views:
+  - title: Task Mode
+    path: task-mode
+    icon: mdi:hand-back-right
+    type: masonry
+    cards:
+      # ---------------------------------------------------------------
+      # STATUS - read this before and after every press. "Last command"
+      # is verified against the output board, not farmhand's HTTP reply.
+      # Task Mode's secondary line shows how long it has been in that
+      # state (automation 12 alerts at 6 h).
+      # ---------------------------------------------------------------
+      - type: vertical-stack
+        cards:
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: tile
+                entity: binary_sensor.greenery_s_farm_task_mode_active
+                name: Task Mode
+                state_content:
+                  - state
+                  - last_changed
+              - type: tile
+                entity: binary_sensor.greenery_s_farm_farm_bridge_status
+                name: Bridge
+              - type: tile
+                entity: binary_sensor.greenery_s_farm_output_board_connected
+                name: Output Board
+              - type: tile
+                entity: binary_sensor.greenery_s_farm_relay_state_mismatch
+                name: Relay Mismatch
+
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: sensor.greenery_s_farm_farm_control_status
+                name: Last command
+
+      # ---------------------------------------------------------------
+      # CONTROLS - Task Mode switches every output to manual except
+      # HVAC and disables farmhand's interlocks. Do not leave it on
+      # unattended. For a hot farm use the Cool-Down dashboard instead:
+      # it keeps recirc and the chiller pump running.
+      # ---------------------------------------------------------------
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: button
+            show_name: true
+            show_icon: true
+            entity: button.greenery_s_farm_enter_task_mode
+            name: Enter Task Mode
+            icon: mdi:hand-back-right
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.greenery_s_farm_enter_task_mode
+              confirmation:
+                text: Put the farm in TASK MODE? Lights and pumps off, recipe suspended.
+            hold_action:
+              action: none
+
+          - type: button
+            show_name: true
+            show_icon: true
+            entity: button.greenery_s_farm_exit_task_mode
+            name: Return to Auto
+            icon: mdi:play-circle
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.greenery_s_farm_exit_task_mode
+              confirmation:
+                text: Return the farm to automatic recipe control?
+            hold_action:
+              action: none
+
+      # ---------------------------------------------------------------
+      # PUMP STATUS - read back from the relays, every pump on the
+      # board. Nursery Recirc also carries the chiller pump: if it is
+      # off while the chiller unit is on, the chiller has no flow.
+      # Send pressure confirms the send pumps are actually moving water.
+      # ---------------------------------------------------------------
+      - type: entities
+        title: Pump Status
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.greenery_s_farm_cultivation_recirc_pump
+            name: Cultivation Recirc
+          - entity: binary_sensor.greenery_s_farm_left_send_pump
+            name: Left Send
+          - entity: binary_sensor.greenery_s_farm_right_send_pump
+            name: Right Send
+          - entity: binary_sensor.greenery_s_farm_nursery_top_trough_pump
+            name: Nursery Top Trough
+          - entity: binary_sensor.greenery_s_farm_nursery_bottom_trough_pump
+            name: Nursery Bottom Trough
+          - entity: binary_sensor.greenery_s_farm_nursery_recirc_and_chiller_pump
+            name: Nursery Recirc + Chiller Pump
+          - type: divider
+          - entity: binary_sensor.greenery_s_farm_spare_chiller_and_extra_fans
+            name: Chiller Unit + Extra Fans
+          - entity: sensor.greenery_s_farm_left_send_pressure
+            name: Left Send Pressure
+          - entity: sensor.greenery_s_farm_right_send_pressure
+            name: Right Send Pressure
+
+      # ---------------------------------------------------------------
+      # PUMP SWITCHES - only while in Task Mode. Result of each press
+      # shows in "Last command" at the top: CONFIRMED is read back from
+      # the relay. The trough pumps are not switchable from HA.
+      # ---------------------------------------------------------------
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.greenery_s_farm_task_mode_active
+            state: "on"
+        card:
+          type: grid
+          title: Pumps (Task Mode only)
+          columns: 1
+          square: false
+          cards:
+            - type: tile
+              entity: switch.greenery_s_farm_cultivation_recirc_pump_switch
+              name: Cultivation Recirc Pump
+              tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Cultivation Recirc Pump on/off?
+              icon_tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Cultivation Recirc Pump on/off?
+              hold_action:
+                action: none
+
+            - type: tile
+              entity: switch.greenery_s_farm_left_send_pump_switch
+              name: Left Send Pump
+              tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Left Send Pump on/off?
+              icon_tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Left Send Pump on/off?
+              hold_action:
+                action: none
+
+            - type: tile
+              entity: switch.greenery_s_farm_right_send_pump_switch
+              name: Right Send Pump
+              tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Right Send Pump on/off?
+              icon_tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Right Send Pump on/off?
+              hold_action:
+                action: none
+
+            # Also carries the chiller pump: off means the chiller loses flow.
+            - type: tile
+              entity: switch.greenery_s_farm_nursery_recirc_and_chiller_pump_switch
+              name: Nursery Recirc + Chiller Pump
+              tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Nursery Recirc and Chiller Pump on/off? Off stops chiller flow.
+              icon_tap_action:
+                action: toggle
+                confirmation:
+                  text: Turn Nursery Recirc and Chiller Pump on/off? Off stops chiller flow.
+              hold_action:
+                action: none
+
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.greenery_s_farm_task_mode_active
+            state_not: "on"
+        card:
+          type: markdown
+          content: >-
+            Pump switches appear here when the farm is in **Task Mode**.
