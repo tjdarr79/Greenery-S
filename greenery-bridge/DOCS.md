@@ -3,8 +3,9 @@
 Reads your Freight Farms Greenery S local Farmhand endpoint and publishes
 everything to Home Assistant over MQTT: sensors, all 32 relay channels, module
 health, one-tap Task Mode controls, pump switches that work only in Task Mode,
-a one-tap Cool-Down, switches for farmhand's 24-hour settings, and the four
-dosing tank levels with low and sensor-fault alerts.
+a one-tap Cool-Down, switches for farmhand's 24-hour settings, the four
+dosing tank levels with low and sensor-fault alerts, and the latest photo
+from each of the farm's six cameras.
 
 No farmhand cloud subscription is needed for any of it.
 
@@ -160,7 +161,7 @@ back from a bad release.
 **Settings → Devices & Services → MQTT → your farm name** (`Greenery S Farm`
 unless you changed it).
 
-You should see roughly 85 entities. Note the device lives *inside* the MQTT
+You should see roughly 100 entities. Note the device lives *inside* the MQTT
 card — it is not listed at the top level of Devices & Services, which is easy
 to miss.
 
@@ -197,8 +198,9 @@ A switch left on keeps its pump running until someone turns it off. In Task
 Mode farmhand's recipe is suspended, and with it its automatic protections —
 stay with the farm while a pump you started is running.
 
-No command is sent when the app starts or restarts — only the two read-only
-queries described under [farmhand reply stream](#farmhand-reply-stream) — and
+No command is sent when the app starts or restarts — only the read-only
+queries described under [farmhand reply stream](#farmhand-reply-stream) and
+[Cameras](#cameras) — and
 a command left *retained* on the broker is ignored and cleared rather than
 replayed.
 
@@ -394,10 +396,79 @@ Every state is published only when it changes, so the recorder stores only
 changes: none while the tanks sit full, and well under 10 rows an hour for
 all sixteen entities otherwise.
 
+## Cameras
+
+The latest photo from each of the farm's six cameras: **Nursery Top**,
+**Nursery Bottom**, **Cultivation Left**, **Cultivation Left Middle**,
+**Cultivation Right Middle** and **Cultivation Right**. The names are
+farmhand's own.
+
+- **Only the latest photo is kept**, like the farmhand mobile app. There is
+  no photo history, nothing is written to disk, and there is no storage to set
+  up. The broker keeps one photo per camera (retained, about 1 MB each, each
+  replaced by the next), so Home Assistant shows them again after a restart.
+- **farmhand takes a photo every 3 hours.** The app asks farmhand for the
+  latest photos at start and every 30 minutes — the read-only request
+  farmhand's own page sends on every load — so a new photo shows within 30
+  minutes of being taken. A photo is sent to Home Assistant only when it is
+  new.
+- Each camera has a **Photo Time** sensor, under the device's Diagnostic
+  section: when its photo was taken. It should match farmhand.
+- **Camera Photos Stale** turns on when any camera's latest photo is older
+  than 2.5 photo cycles — 7.5 hours at farmhand's 3-hour cycle, which the app
+  reads from farmhand. It lists those cameras, and `24-camera-stale` sends one
+  alert (not critical), at most once every 24 hours.
+
+**Dashboard.** Add a view to your dashboard titled *Cameras*, URL
+`farm-cameras`, and paste `dashboard-cameras.yaml` into it as a Manual card.
+The **Cameras** button at the bottom of `dashboard-controls.yaml` opens it. On
+its own view the photos never slow the main view on a phone. While the view is
+open, Home Assistant re-reads each photo every 10 seconds (its normal camera
+behaviour); nothing is fetched once it is closed.
+
+The **Log** tab shows `New photo: Nursery Top, taken …` for each new photo.
+Once per start it also says whether farmhand ever sends a photo without being
+asked — `Camera photo arrived WITHOUT a request`, or after a full photo cycle
+`No camera photo arrived without a request`.
+
+### Recorder
+
+A photo never goes into a sensor's state or attributes, so the database never
+stores one. **Photo Time** and **Camera Photos Stale** are recorded: a few
+rows a day.
+
+The camera entities should add almost nothing either: Home Assistant does not
+record a camera's access token. It does rotate that token every 5 minutes,
+though, and each rotation may still write a row — up to 72 rows an hour for
+six cameras. **Check after an hour of running:** Developer Tools → Template,
+
+```
+{{ states.camera.greenery_s_farm_nursery_top_camera.last_updated }}
+```
+
+then again 10 minutes later. If it moved while that camera's Photo Time did
+not, each move is a database row: exclude cameras from the recorder in
+`configuration.yaml`, then restart Home Assistant:
+
+```yaml
+recorder:
+  purge_keep_days: 90
+  exclude:
+    domains:
+      - camera
+```
+
+`purge_keep_days: 90` is 3 Corners Farm's existing setting — keep whatever
+your `recorder:` block already has and add only the `exclude:` lines. Without
+a `recorder:` block Home Assistant keeps 10 days; leave the
+`purge_keep_days` line out rather than keep nine times as much history.
+Excluding cameras loses nothing: their history is only "idle". The photos and
+Photo Time are unaffected.
+
 ## Then set up the alerts
 
 This add-on delivers the data. The alerting — the notification script and the
-twenty-three automations — is pasted into the Home Assistant UI and is not part of
+twenty-four automations — is pasted into the Home Assistant UI and is not part of
 the add-on.
 
 Follow `README.md` in the repository, section **New install**, from step 3.

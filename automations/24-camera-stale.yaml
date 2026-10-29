@@ -1,0 +1,37 @@
+alias: Farm Camera Photos Stale
+description: >-
+  farmhand photographs the farm with six cameras every 3 hours
+  (image_cycle_time), and the bridge shows the latest photo from each. Camera
+  Photos Stale turns on when any camera's latest photo is older than 2.5 photo
+  cycles - 7.5 h on a stock farm: the camera, or farmhand's photo cycle, has
+  stopped. Not critical: the farm runs without its cameras.
+
+  Fires on OFF -> ON only, so a bridge or Home Assistant restart does not page
+  again, and at most once every 24 h however often it turns on.
+
+  Test the alert without waiting 8 h: Developer Tools -> States, set
+  binary_sensor.greenery_s_farm_camera_photos_stale to "on" (from "off"). The
+  bridge corrects it within 30 minutes.
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_camera_photos_stale
+    from: "off"
+    to: "on"
+    trigger: state
+conditions:
+  - condition: template
+    value_template: >-
+      {{ this.attributes.last_triggered is none
+         or now() - this.attributes.last_triggered > timedelta(hours=24) }}
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: 📷 Camera Photos Stale
+      notification_id: farm_camera_photos_stale
+      message: >-
+        {% set names = state_attr(trigger.entity_id, 'stale_cameras') or [] %}
+        {% set hours = state_attr(trigger.entity_id, 'stale_after_hours') or 7.5 %}
+        No new photo for over {{ hours }} h from
+        {{ names | join(', ') if names else 'one or more cameras' }}. farmhand
+        takes one every 3 h. Check the camera(s) in farmhand Local.
+mode: single

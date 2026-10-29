@@ -147,7 +147,7 @@ that, when skipped, let ten dead automations go unnoticed indefinitely. See
 
 ### 4. Install the automations
 
-Twenty-three files in `automations/`, pasted one at a time — HA's editor rejects a
+Twenty-four files in `automations/`, pasted one at a time — HA's editor rejects a
 multi-automation list. None of them contain a phone name; that lives only in
 the script. See **Installing the automations**.
 
@@ -164,11 +164,15 @@ sensor has been quiet for a few days — see the hypothesis note under
 Both carry a **Dosing Tanks** card under Environmental, with the four
 **Refilled** buttons — see **Dosing tank levels**.
 
+`dashboard-cameras.yaml` is the **Cameras** card, on a view of its own — see
+**Cameras (latest photo only)**.
+
 ### 6. Optional — Task Mode control
 
 `dashboard-controls.yaml` adds a **Cool-Down** card at the top, Enter/Exit
 Task Mode buttons with confirmation guards, a separate **Pumps (Task Mode
-only)** card, and a **24-Hour Settings** card. Read **Task Mode control**,
+only)** card, a **24-Hour Settings** card, and a **Cameras** button that
+opens the Cameras view. Read **Task Mode control**,
 **Pump switches (Task Mode only)**, **Cool-Down (phone only)** and **24-hour
 settings switches** first: the commands are undocumented, and every card must
 carry `confirmation:` or a pocket-tap will stop the farm.
@@ -179,21 +183,22 @@ carry `confirmation:` or a pocket-tap will stop the farm.
 
 | File | Purpose |
 |---|---|
-| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, Task Mode control, Task-Mode-only pump switches, Cool-Down, 24-hour settings switches, the farmhand version and the dosing tank levels all included — **no patch steps** |
+| `farm_bridge.py` | The bridge. Sensors, 32-channel relay mapping, Task Mode control, Task-Mode-only pump switches, Cool-Down, 24-hour settings switches, the farmhand version, the dosing tank levels and the latest camera photos all included — **no patch steps** |
 | `farm-bridge.env.example` | Copy to `farm-bridge.env` and fill in |
 | `farm-bridge.service` | systemd unit (Linux) |
 | `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
-| `automations/01`–`23` | Alert automations, pasted into HA one at a time |
+| `automations/01`–`24` | Alert automations, pasted into HA one at a time |
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard, with the Dosing Tanks card under Environmental |
 | `farm-dashboard-mobile.yaml` | Phone dashboard, the same cards stacked |
-| `dashboard-controls.yaml` | Control card: Cool-Down, Task Mode, the Task-Mode-only pump switches, 24-hour settings |
+| `dashboard-controls.yaml` | Control card: Cool-Down, Task Mode, the Task-Mode-only pump switches, 24-hour settings, a button to the Cameras view |
+| `dashboard-cameras.yaml` | Cameras card: the latest photo from each of the six cameras, for its own view |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
 | `tools/render-farm-yaml.py` | Writes a farm's own copy of every automation and dashboard, for any farm name other than the default |
-| `tools/farmhand/` | Run-by-hand farmhand scripts: a read-only settings dump, a read-only dosing tank level check, and the 24-hour switch for when HA is down — see its README |
-| `tests/` | Unit tests for the bridge's dosing tank logic: `python -m unittest discover -s tests -q` |
+| `tools/farmhand/` | Run-by-hand farmhand scripts: read-only dumps of settings and camera photos, a read-only dosing tank level check, an HVAC logger, and the 24-hour switch for when HA is down — see its README |
+| `tests/` | `pytest -q tests` — the dosing tank logic, and the camera code against real farmhand captures in `tests/fixtures/farmhand/`. Without pytest, the dosing tests alone: `python -m unittest discover -s tests -p "test_dosing*.py" -q` |
 | `greenery-bridge/` | **The Home Assistant app** — how the bridge is installed |
 | `repository.yaml` | Makes this repo installable as an HA add-on repository |
 | `CONTRIBUTING.md` | Branches and releases: `main` for development, `stable` for customer farms |
@@ -393,7 +398,7 @@ level of Devices & Services. Easy to miss when you are looking for it by name.
 
 ## Alert automations
 
-Twenty-three phone-notification automations live in `automations/`, one file each,
+Twenty-four phone-notification automations live in `automations/`, one file each,
 covering the thresholds actually needed for daily operation. They notify
 via Home Assistant's Companion App, not email/SMS.
 
@@ -426,6 +431,7 @@ deployed — see "Notification routing" below.**
 | `21-cool-down-fault.yaml` | Cool-Down Fault turns on | immediate | **Critical.** A recirc or chiller pump not confirmed running during Cool-Down — the chiller may run with no flow. Task Mode silences 11, so this is the only recirc alarm then |
 | `22-farmhand-version-changed.yaml` | farmhand Version changes | immediate | Task Mode, pump switches, Cool-Down and 24-hour switches use unsupported commands — re-test them |
 | `23-dosing-tank-alert.yaml` | The bridge sends a dosing tank alert | as sent | Tank low (every 12 h while low), sensor unstable (at most daily), sensor silent 21 days (weekly). Timing is decided in the bridge — see **Dosing tank levels** |
+| `24-camera-stale.yaml` | Camera Photos Stale turns on | immediate, at most once per 24 h | A camera's latest photo is over 2.5 photo cycles (7.5 h) old — the camera or farmhand's photo cycle has stopped. Not critical |
 
 ### Water temp measurement caveat (important)
 
@@ -683,10 +689,11 @@ so a command that did not take leaves it where it was.
 ### What it never does
 
 - **Sends no command at startup.** Restarting the bridge in Task Mode sends
-  no control command. The only requests it sends unprompted are the two
+  no control command. The only requests it sends unprompted are three
   read-only queries farmhand's own page sends on every load — `get_farm_info`
-  and `get_version` — at start and every 5 minutes (see **farmhand reply
-  stream**).
+  and `get_version` at start and every 5 minutes (see **farmhand reply
+  stream**), and `get_last_images_local_only` at start and every 30 minutes
+  (see **Cameras**).
 - **Never replays a retained command.** The broker re-delivers a retained
   message on every reconnect. The bridge ignores any command that arrives
   retained, logs a warning and clears it from the broker. When publishing a
@@ -923,6 +930,100 @@ by farmhand's own page on every load — and keeps:
 
 To see the raw events, set `FARM_LOG_MONITORING=1` (app option **Log
 farm-monitoring stream**) and restart: the first 20 events are logged at INFO.
+
+## Cameras (latest photo only)
+
+The latest photo from each of the farm's six cameras, like the farmhand mobile
+app: **no photo history and nothing written to disk**. The owner decided
+against storing photos (2026-10-29).
+
+| Camera entity | Photo Time sensor (diagnostic) |
+|---|---|
+| `camera.greenery_s_farm_nursery_top_camera` | `sensor.greenery_s_farm_nursery_top_photo_time` |
+| `camera.greenery_s_farm_nursery_bottom_camera` | `sensor.greenery_s_farm_nursery_bottom_photo_time` |
+| `camera.greenery_s_farm_cultivation_left_camera` | `sensor.greenery_s_farm_cultivation_left_photo_time` |
+| `camera.greenery_s_farm_cultivation_left_middle_camera` | `sensor.greenery_s_farm_cultivation_left_middle_photo_time` |
+| `camera.greenery_s_farm_cultivation_right_middle_camera` | `sensor.greenery_s_farm_cultivation_right_middle_photo_time` |
+| `camera.greenery_s_farm_cultivation_right_camera` | `sensor.greenery_s_farm_cultivation_right_photo_time` |
+
+Plus `binary_sensor.greenery_s_farm_camera_photos_stale`, which drives
+`24-camera-stale`.
+
+### How farmhand delivers photos
+
+Verified 2026-10-16 with `tools/farmhand/dump_cameras.py`; the captures are in
+`tests/fixtures/farmhand/`. `POST {"command":"get_last_images_local_only"}`
+gets `SUCCESS` on `/farm-monitoring`, then one event per camera, about 2 s
+apart, on farmhand's third stream, `/farm-images`:
+
+```
+{"camera": "E45F01CD2C40", "image": "<base64 JPEG>", "last_update": 1792160573.88}
+```
+
+A photo is a 1296x730 JPEG, 550-1050 KB (1.0-1.4 M base64 characters).
+farmhand takes one per camera every `image_cycle_time` (10800 s, 3 hours).
+The request is read-only, and farmhand's own page sends it on every load.
+
+### What the bridge does
+
+- Keeps `/farm-images` open beside the other two streams, with the same
+  reconnect behaviour, and sends `get_last_images_local_only` at start and
+  every 30 minutes — so a new photo shows within 30 minutes of being taken.
+- Names each camera from `get_farm_info`'s `camera_aliases`
+  (`nursery_top` → module `E45F01CD2C40`, "Nursery Top"). Its alias decides
+  the unique_id (`greenery_s_camera_nursery_top`) and topics
+  (`farm/camera/nursery_top/image`), so a replaced camera module keeps its
+  entity. Until `camera_aliases` arrives it uses `CAMERA_FALLBACK`, this
+  farm's table; a camera in neither is logged once and not published.
+- Publishes a photo **only when its `last_update` is new**: the base64 JPEG,
+  retained, to the camera's MQTT camera entity (`image_encoding: b64`), then
+  its time to the Photo Time sensor. The broker therefore holds exactly one
+  photo per camera, and HA shows it again after a restart. At start the bridge
+  reads its retained Photo Times back, so a restart does not send the same six
+  photos (about 8 MB) again.
+- Never puts the photo in a sensor state or attribute — the recorder would
+  keep every one.
+- Logs, once per start, whether a photo ever arrives **without** a request:
+  `Camera photo arrived WITHOUT a request …`, or after a full photo cycle
+  `No camera photo arrived without a request … farmhand sends photos only when
+  asked`. farmhand's own page asks on every load and every listener gets the
+  photos, so a farmhand page left open counts as a request.
+
+**Camera Photos Stale** is ON while any camera's latest photo is older than
+2.5 photo cycles — 7.5 h at farmhand's `image_cycle_time`, read live from
+`get_farm_info`. Its `stale_cameras` attribute names them. A camera farmhand
+lists but that never sends a photo counts from the bridge's start.
+`24-camera-stale` alerts (not critical) on OFF → ON, at most once per 24 h.
+
+**Recorder.** Photo Time and Camera Photos Stale change only with a new photo
+or a stale camera — a few rows a day. HA may also write a row per camera every
+5 minutes when it rotates the camera's access token; DOCS.md, *Cameras →
+Recorder*, has the check and the `exclude` that removes them.
+
+### Dashboard
+
+`dashboard-cameras.yaml`: six photos in a two-column grid (phone width), in the
+order above, state text hidden; a tap opens the photo full size. Under it, a
+row that appears only while Camera Photos Stale is on. It goes on its own view
+(URL `farm-cameras`) so the main view never loads six photos; the **Cameras**
+button at the bottom of `dashboard-controls.yaml` opens it.
+
+### Acceptance test
+
+1. The Cameras view shows six current photos, each the area its name says.
+   Each Photo Time matches farmhand.
+2. After the next 3-hour photo cycle, new photos appear within 30 minutes.
+3. Restart the app, then HA: the photos still show, with no duplicate
+   entities.
+4. `/share` and `/media` have no new camera folders.
+5. Camera Photos Stale: **stopping the bridge does not test it** — farmhand
+   keeps taking photos meanwhile, and the bridge fetches the latest at
+   restart. Test the alert from Developer Tools → States (set the sensor to
+   `on`, from `off`): one alert, and none on a second try within 24 h. The
+   threshold itself is covered by `pytest -q tests -k stale`, including a
+   lowered `image_cycle_time`; for a live test, unplug one camera for 8 h.
+6. Recorder: the check in DOCS.md, *Cameras → Recorder*.
+7. HA's system monitor shows no lasting rise in CPU or memory.
 
 ## Single point of failure: CloudGate
 

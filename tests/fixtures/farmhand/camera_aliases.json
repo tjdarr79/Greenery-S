@@ -1,0 +1,44 @@
+{
+  "nursery_top": {
+    "module": "E45F01CD2C40",
+    "name": "Nursery Top",
+    "aliased_zone": "zone_2",
+    "zone": "Nursery",
+    "rotation": 0
+  },
+  "nursery_bottom": {
+    "module": "E45F01CD2C43",
+    "name": "Nursery Bottom",
+    "aliased_zone": "zone_2",
+    "zone": "Nursery",
+    "rotation": 0
+  },
+  "cultivation_left": {
+    "module": "E45F01CD2C8E",
+    "name": "Cultivation Left",
+    "aliased_zone": "zone_3",
+    "zone": "Cultivation",
+    "rotation": 0
+  },
+  "cultivation_left_center": {
+    "module": "E45F01CD2C73",
+    "name": "Cultivation Left Middle",
+    "aliased_zone": "zone_3",
+    "zone": "Cultivation",
+    "rotation": 0
+  },
+  "cultivation_right_center": {
+    "module": "E45F01CD2C6D",
+    "name": "Cultivation Right Middle",
+    "aliased_zone": "zone_3",
+    "zone": "Cultivation",
+    "rotation": 0
+  },
+  "cultivation_right": {
+    "module": "E45F01CD2C88",
+    "name": "Cultivation Right",
+    "aliased_zone": "zone_3",
+    "zone": "Cultivation",
+    "rotation": 0
+  }
+}

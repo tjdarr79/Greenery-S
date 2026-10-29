@@ -1,0 +1,92 @@
+# ---------------------------------------------------------------------------
+# CAMERAS CARD - its own view, so six photos never slow the main view
+#
+# 1. Dashboard -> Edit -> + (add view). Title: Cameras. URL: farm-cameras
+#    (the Cameras button in dashboard-controls.yaml opens this URL).
+# 2. In that view: Add Card -> Manual, then paste this block.
+#
+# The latest photo from each camera, like the farmhand mobile app - there is
+# no history. farmhand takes one every 3 hours. Tap a photo for full size.
+# Each one's time is its "Photo Time" sensor, under the device's Diagnostic.
+#
+# While this view is open Home Assistant re-reads each photo every 10 seconds
+# (its normal camera card behaviour); nothing is fetched once it is closed.
+# ---------------------------------------------------------------------------
+
+type: vertical-stack
+cards:
+  - type: grid
+    title: Cameras
+    columns: 2
+    square: false
+    cards:
+      - type: picture-entity
+        entity: camera.greenery_s_farm_nursery_top_camera
+        name: Nursery Top
+        show_state: false
+        tap_action:
+          action: more-info
+        hold_action:
+          action: none
+
+      - type: picture-entity
+        entity: camera.greenery_s_farm_nursery_bottom_camera
+        name: Nursery Bottom
+        show_state: false
+        tap_action:
+          action: more-info
+        hold_action:
+          action: none
+
+      - type: picture-entity
+        entity: camera.greenery_s_farm_cultivation_left_camera
+        name: Cultivation Left
+        show_state: false
+        tap_action:
+          action: more-info
+        hold_action:
+          action: none
+
+      - type: picture-entity
+        entity: camera.greenery_s_farm_cultivation_left_middle_camera
+        name: Cultivation Left Middle
+        show_state: false
+        tap_action:
+          action: more-info
+        hold_action:
+          action: none
+
+      - type: picture-entity
+        entity: camera.greenery_s_farm_cultivation_right_middle_camera
+        name: Cultivation Right Middle
+        show_state: false
+        tap_action:
+          action: more-info
+        hold_action:
+          action: none
+
+      - type: picture-entity
+        entity: camera.greenery_s_farm_cultivation_right_camera
+        name: Cultivation Right
+        show_state: false
+        tap_action:
+          action: more-info
+        hold_action:
+          action: none
+
+  # Shown only while a camera has sent no new photo for 2.5 photo cycles.
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: binary_sensor.greenery_s_farm_camera_photos_stale
+        state: "on"
+    card:
+      type: entities
+      show_header_toggle: false
+      entities:
+        - entity: binary_sensor.greenery_s_farm_camera_photos_stale
+          name: Camera photos stale
+        - type: attribute
+          entity: binary_sensor.greenery_s_farm_camera_photos_stale
+          attribute: stale_cameras
+          name: No new photo from

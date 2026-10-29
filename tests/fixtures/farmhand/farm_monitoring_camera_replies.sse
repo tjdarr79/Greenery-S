@@ -1,0 +1,4 @@
+data: {"response_to": "read_cameras", "response": {"E45F01CD2C40": {"type": "camera", "name": ""}, "E45F01CD2C43": {"type": "camera", "name": ""}, "E45F01CD2C6D": {"type": "camera", "name": ""}, "E45F01CD2C73": {"type": "camera", "name": ""}, "E45F01CD2C88": {"type": "camera", "name": ""}, "E45F01CD2C8E": {"type": "camera", "name": ""}}, "error_message": "", "controller_id": "00000000-0000-0000-0000-000000000001", "request_id": ""}
+
+data: {"response_to": "get_last_images_local_only", "response": "SUCCESS", "error_message": "", "controller_id": "00000000-0000-0000-0000-000000000001", "request_id": ""}
+

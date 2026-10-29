@@ -33,6 +33,7 @@ import time
 import unicodedata
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import aiohttp
 import paho.mqtt.client as mqtt
@@ -1630,6 +1631,8 @@ def build_mqtt_client() -> mqtt.Client:
             cool_down_subscribed()
             # Refilled buttons, and each tank's retained memory read back.
             DOSING.subscribe(c)
+            # Read back, so a restart does not publish the same photos again.
+            c.subscribe(f"{CAMERA_TOPIC}/+/photo_time", qos=1)
         else:
             log.error(f"MQTT connection FAILED: {msg}")
 
@@ -1649,6 +1652,10 @@ def build_mqtt_client() -> mqtt.Client:
         if topic in dosing_memory_topics:
             if msg.retain:
                 DOSING.memory_retained(dosing_memory_topics[topic], msg.payload)
+            return
+        if topic.startswith(f"{CAMERA_TOPIC}/") and topic.endswith("/photo_time"):
+            if msg.retain:
+                camera_retained(topic.split("/")[-2], msg.payload)
             return
         # The broker replays a retained message on every (re)subscribe - i.e.
         # every bridge restart and reconnect. A command must never replay, so
@@ -1742,6 +1749,7 @@ def publish_discovery(client: mqtt.Client):
     publish_module_discovery(client, availability_topic)
     publish_farmhand_discovery(client, availability_topic)
     DOSING.publish_discovery(client, availability_topic)
+    publish_camera_discovery(client, availability_topic)
 
 
 def extract_value(payload: dict, sensor: SensorDef):
@@ -1808,7 +1816,8 @@ async def stream_farm_data(mqtt_client: mqtt.Client):
 #
 # The bridge reads it all the time. Once at start and every FH_POLL_SECONDS it
 # sends get_farm_info and get_version - read-only, and both sent by farmhand's
-# own page on every load. Those are the only things it sends unprompted.
+# own page on every load. Those, and get_last_images_local_only for the
+# cameras (below), are the only things it sends unprompted.
 # ---------------------------------------------------------------------------
 
 # Follows the farm's host and port, like FARM_CONTROL_URL does.
@@ -1865,6 +1874,7 @@ def handle_monitoring_event(client, msg):
             _fh_info_replies += 1
             _FH_REPLIES.notify_all()
         publish_fh24_states(client, settings)
+        update_camera_names(response.get("camera_aliases"))
     elif what == "get_version":
         version = str(response).strip() if isinstance(response, (str, int, float)) else ""
         if not version:
@@ -1923,11 +1933,11 @@ async def poll_farmhand(client):
         await asyncio.sleep(delay)
 
 
-async def _sse_events(content):
+async def _sse_events(content, label="farm-monitoring"):
     """Yield each SSE event's data, multi-line data: fields joined by newlines.
 
     Reads raw chunks rather than aiohttp's readline, whose line limit a large
-    reply would hit.
+    reply - or a camera photo - would hit.
     """
     buf = bytearray()
     data, size, skipping = [], 0, False
@@ -1948,13 +1958,13 @@ async def _sse_events(content):
                 size += len(value)
                 data.append(value)
                 if size > MONITORING_MAX_EVENT_BYTES:
-                    log.warning("farm-monitoring: event over %d bytes skipped",
-                                MONITORING_MAX_EVENT_BYTES)
+                    log.warning("%s: event over %d bytes skipped",
+                                label, MONITORING_MAX_EVENT_BYTES)
                     data, skipping = [], True
         del buf[:start]
         if len(buf) > MONITORING_MAX_EVENT_BYTES:
-            log.warning("farm-monitoring: event over %d bytes skipped",
-                        MONITORING_MAX_EVENT_BYTES)
+            log.warning("%s: event over %d bytes skipped",
+                        label, MONITORING_MAX_EVENT_BYTES)
             buf.clear()
             data, skipping = [], True
 
@@ -2168,6 +2178,368 @@ def publish_farmhand_discovery(client, availability_topic: str):
     log.info("Published discovery config for farmhand Version")
 
 
+# ---------------------------------------------------------------------------
+# CAMERAS - LATEST PHOTO ONLY
+#
+# Verified 2026-10-16 with tools/farmhand/dump_cameras.py (captures in
+# tests/fixtures/farmhand/):
+#     POST {"command": "get_last_images_local_only"}  ->  "SUCCESS" on
+#     /farm-monitoring, then one event per camera, about 2 s apart, on
+#     /farm-images:
+#     {"camera": "<module id>", "image": "<base64 JPEG>", "last_update": <epoch s>}
+# Read-only, and farmhand's own page sends it on every load. farmhand takes a
+# photo every image_cycle_time (10800 s); the bridge asks every
+# CAMERA_POLL_SECONDS and publishes a photo only when its last_update is new.
+#
+# Like the farmhand mobile app, only the latest photo per camera exists. It
+# goes from the event straight to the camera's RETAINED MQTT topic, so the
+# broker holds one photo per camera and HA shows it after a restart. Nothing
+# is written to disk, and the image never goes into a sensor state or
+# attribute - the recorder would keep every one.
+# ---------------------------------------------------------------------------
+
+# Follows the farm's host and port, like MONITORING_URL does.
+IMAGES_URL = os.environ.get("FARM_IMAGES_URL",
+                            SSE_URL.rsplit("/", 1)[0] + "/farm-images")
+
+CMD_GET_LAST_IMAGES = {"command": "get_last_images_local_only"}
+
+CAMERA_POLL_SECONDS = 1800
+CAMERA_REPLY_SECONDS = 60          # all six photos arrive well inside this
+CAMERA_DEFAULT_CYCLE_SECONDS = 10800   # image_cycle_time until get_farm_info says
+CAMERA_STALE_CYCLES = 2.5          # missed photo cycles before Camera Photos Stale
+
+# This farm's cameras: alias -> (module id, name). Used only until
+# get_farm_info's camera_aliases arrives, which carries the same three fields
+# for any farm. The alias is farmhand's own key: it decides the unique_id and
+# the MQTT topics, so it must never change.
+CAMERA_FALLBACK = {
+    "nursery_top":              ("E45F01CD2C40", "Nursery Top"),
+    "nursery_bottom":           ("E45F01CD2C43", "Nursery Bottom"),
+    "cultivation_left":         ("E45F01CD2C8E", "Cultivation Left"),
+    "cultivation_left_center":  ("E45F01CD2C73", "Cultivation Left Middle"),
+    "cultivation_right_center": ("E45F01CD2C6D", "Cultivation Right Middle"),
+    "cultivation_right":        ("E45F01CD2C88", "Cultivation Right"),
+}
+
+CAMERA_TOPIC = f"{MQTT_BASE_TOPIC}/camera"     # .../<alias>/image, .../<alias>/photo_time
+CAMERA_STALE_TOPIC = f"{MQTT_BASE_TOPIC}/camera_photos_stale/state"
+CAMERA_STALE_ATTRIBUTES_TOPIC = f"{MQTT_BASE_TOPIC}/camera_photos_stale/attributes"
+
+
+@dataclass
+class _CameraState:
+    names: dict = field(default_factory=dict)       # module id -> (alias, name), from camera_aliases
+    photo_time: dict = field(default_factory=dict)  # alias -> Photo Time of the photo on the broker
+    taken: dict = field(default_factory=dict)       # alias -> that photo's last_update
+    discovered: dict = field(default_factory=dict)  # alias -> name announced to HA this run
+    unknown: set = field(default_factory=set)       # module ids already warned about
+    connected: bool = False                         # /farm-images is open
+    photos: int = 0                                 # photo events received
+    drops: int = 0                                  # /farm-images disconnects
+    requested_until: float = None                   # monotonic end of the last request's replies
+    unprompted_logged: bool = False
+    none_unprompted_logged: bool = False
+    stale_published: tuple = None
+    started: float = field(default_factory=time.time)
+
+
+_CAM = _CameraState()
+# photo_time and taken are also written from paho's thread (camera_retained).
+_CAMERA_LOCK = threading.Lock()
+
+
+def update_camera_names(aliases):
+    """get_farm_info's camera_aliases, e.g.
+    {"nursery_top": {"module": "E45F01CD2C40", "name": "Nursery Top", ...}, ...}"""
+    names = {}
+    if isinstance(aliases, dict):
+        for raw, info in aliases.items():
+            alias = farm_slug(str(raw))
+            module = info.get("module") if isinstance(info, dict) else None
+            if alias and isinstance(module, str) and module:
+                name = str(info.get("name") or "").strip() or alias.replace("_", " ").title()
+                names[module] = (alias, name)
+    if names and names != _CAM.names:
+        log.info("Cameras from farmhand: %s", ", ".join(n for _a, n in names.values()))
+        _CAM.names = names
+
+
+def _camera_map() -> dict:
+    """module id -> (alias, name): farmhand's camera_aliases, or the fallback."""
+    return _CAM.names or {m: (a, n) for a, (m, n) in CAMERA_FALLBACK.items()}
+
+
+def _camera_name(alias: str) -> str:
+    for a, n in _camera_map().values():
+        if a == alias:
+            return n
+    return alias.replace("_", " ").title()
+
+
+def _camera_cycle_seconds() -> float:
+    with _FH_REPLIES:
+        cycle = LATEST_FH_SETTINGS.get("image_cycle_time")
+    if isinstance(cycle, bool) or not isinstance(cycle, (int, float)) or cycle <= 0:
+        return CAMERA_DEFAULT_CYCLE_SECONDS
+    return float(cycle)
+
+
+def camera_retained(alias: str, payload: bytes):
+    """A Photo Time left on the broker by the last run: its photo is still
+    there, retained, so the same photo is not published again."""
+    try:
+        photo_time = payload.decode("utf-8")
+        taken = datetime.fromisoformat(photo_time).timestamp()
+    except ValueError:
+        return
+    with _CAMERA_LOCK:
+        if alias not in _CAM.photo_time:
+            _CAM.photo_time[alias] = photo_time
+            _CAM.taken[alias] = taken
+
+
+def _publish_camera_entities(client, alias: str, name: str):
+    availability_topic = f"{MQTT_BASE_TOPIC}/bridge/status"
+    client.publish(
+        f"{DISCOVERY_PREFIX}/camera/{alias}/config",
+        json.dumps({
+            "name": f"{name} Camera",
+            "unique_id": f"greenery_s_camera_{alias}",
+            "topic": f"{CAMERA_TOPIC}/{alias}/image",
+            "image_encoding": "b64",
+            "availability_topic": availability_topic,
+            "device": DEVICE_INFO,
+        }),
+        qos=1, retain=True,
+    )
+    client.publish(
+        f"{DISCOVERY_PREFIX}/sensor/camera_{alias}_photo_time/config",
+        json.dumps({
+            "name": f"{name} Photo Time",
+            "unique_id": f"greenery_s_camera_{alias}_photo_time",
+            "state_topic": f"{CAMERA_TOPIC}/{alias}/photo_time",
+            "device_class": "timestamp",
+            "entity_category": "diagnostic",
+            "availability_topic": availability_topic,
+            "icon": "mdi:camera-timer",
+            "device": DEVICE_INFO,
+        }),
+        qos=1, retain=True,
+    )
+    log.info(f"Published discovery config for {name} Camera and Photo Time")
+
+
+def _note_unprompted(module: str):
+    if _CAM.requested_until is not None and time.monotonic() <= _CAM.requested_until:
+        return
+    if not _CAM.unprompted_logged:
+        _CAM.unprompted_logged = True
+        log.info("Camera photo arrived WITHOUT a request from this app (camera %s): "
+                 "farmhand sends photos unasked - unless farmhand's own page was "
+                 "open, which asks on every load", module)
+
+
+def handle_camera_event(client, msg):
+    """One /farm-images event. Publishes the photo only if its last_update is new."""
+    module = msg.get("camera") if isinstance(msg, dict) else None
+    image = msg.get("image") if isinstance(msg, dict) else None
+    taken = msg.get("last_update") if isinstance(msg, dict) else None
+    if not (isinstance(module, str) and isinstance(image, str) and image
+            and isinstance(taken, (int, float)) and not isinstance(taken, bool)):
+        log.debug("farm-images: event without camera, image and last_update ignored")
+        return
+    _CAM.photos += 1
+    _note_unprompted(module)
+
+    entry = _camera_map().get(module)
+    if entry is None:
+        if module not in _CAM.unknown:
+            _CAM.unknown.add(module)
+            log.warning("Camera %s is not in farmhand's camera_aliases - its photos "
+                        "are not published", module)
+        return
+    alias, name = entry
+    if _CAM.discovered.get(alias) != name:
+        _publish_camera_entities(client, alias, name)
+        _CAM.discovered[alias] = name
+
+    if not client.is_connected():
+        # paho would hold the photo in memory until the broker is back; the
+        # next request brings it again instead.
+        return
+    photo_time = datetime.fromtimestamp(taken, timezone.utc).isoformat(timespec="seconds")
+    with _CAMERA_LOCK:
+        if _CAM.photo_time.get(alias) == photo_time:
+            return
+        _CAM.photo_time[alias] = photo_time
+        _CAM.taken[alias] = float(taken)
+    # Image first: a Photo Time on the broker always has its photo there too.
+    client.publish(f"{CAMERA_TOPIC}/{alias}/image", image, qos=1, retain=True)
+    client.publish(f"{CAMERA_TOPIC}/{alias}/photo_time", photo_time, qos=1, retain=True)
+    log.info("New photo: %s, taken %s", name, photo_time)
+    # Camera Photos Stale is decided once the whole batch is in (poll_cameras):
+    # deciding per photo would alert on the first stale one and miss the rest.
+
+
+def publish_camera_stale(client):
+    """Camera Photos Stale: ON while any camera's photo is older than
+    CAMERA_STALE_CYCLES photo cycles. Published only when it changes."""
+    limit = CAMERA_STALE_CYCLES * _camera_cycle_seconds()
+    now = time.time()
+    with _CAMERA_LOCK:
+        taken = dict(_CAM.taken)
+    # Every camera farmhand lists; one silent since this start counts from the
+    # start. Until its list arrives, only fallback cameras that sent a photo -
+    # never a camera merely left on the broker by an earlier setup.
+    aliases = [a for a, _n in _camera_map().values() if _CAM.names or a in taken]
+    stale = [_camera_name(a) for a in aliases if now - taken.get(a, _CAM.started) > limit]
+
+    state = ("ON" if stale else "OFF", tuple(stale), round(limit / 3600, 1))
+    if state == _CAM.stale_published:
+        return
+    _CAM.stale_published = state
+    # Attributes first, so the alert sees the names when the state turns ON.
+    client.publish(CAMERA_STALE_ATTRIBUTES_TOPIC,
+                   json.dumps({"stale_cameras": stale, "stale_after_hours": state[2]}),
+                   qos=1, retain=True)
+    client.publish(CAMERA_STALE_TOPIC, state[0], qos=1, retain=True)
+    if stale:
+        log.warning("Camera photos stale - none newer than %s h from: %s",
+                    state[2], ", ".join(stale))
+
+
+def publish_camera_discovery(client, availability_topic: str):
+    """Camera Photos Stale. Each camera and its Photo Time are announced when
+    its first photo arrives, once its alias is known - see handle_camera_event."""
+    client.publish(
+        f"{DISCOVERY_PREFIX}/binary_sensor/camera_photos_stale/config",
+        json.dumps({
+            "name": "Camera Photos Stale",
+            "unique_id": "greenery_s_camera_photos_stale",
+            "state_topic": CAMERA_STALE_TOPIC,
+            "json_attributes_topic": CAMERA_STALE_ATTRIBUTES_TOPIC,
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device_class": "problem",
+            "availability_topic": availability_topic,
+            "device": DEVICE_INFO,
+        }),
+        qos=1, retain=True,
+    )
+    log.info("Published discovery config for Camera Photos Stale")
+
+
+async def _wait_until(ready, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while not ready():
+        if time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(0.5)
+    return True
+
+
+async def _request_camera_photos() -> bool:
+    """Ask for every camera's latest photo. False means ask again soon."""
+    # A photo sent while the stream is reconnecting is lost.
+    if not await _wait_until(lambda: _CAM.connected, RECONNECT_DELAY_SECONDS + 5):
+        log.warning("Not connected to %s - photos not requested", IMAGES_URL)
+        return False
+    photos, drops = _CAM.photos, _CAM.drops
+    _CAM.requested_until = time.monotonic() + CAMERA_REPLY_SECONDS
+    try:
+        await asyncio.to_thread(farmhand_command, CMD_GET_LAST_IMAGES)
+    except Exception as e:
+        log.warning("get_last_images_local_only not sent: %s: %s", type(e).__name__, e)
+        return False
+
+    expected = len(_camera_map())
+    await _wait_until(lambda: _CAM.photos - photos >= expected or _CAM.drops != drops,
+                      CAMERA_REPLY_SECONDS)
+    got = _CAM.photos - photos
+    if got >= expected:
+        return True
+    if _CAM.drops != drops or not got:
+        log.warning("%d of %d camera photos arrived%s", got, expected,
+                    " before farmhand dropped the photo stream" if _CAM.drops != drops
+                    else f" in {CAMERA_REPLY_SECONDS}s")
+        return False
+    # A camera that never answers is Camera Photos Stale's job; asking every
+    # minute would pull ~1 MB per working camera each time.
+    log.info("%d of %d cameras sent a photo", got, expected)
+    return True
+
+
+def _log_no_unprompted_photos():
+    """Once per run: a full photo cycle passed and no photo came unasked."""
+    if _CAM.unprompted_logged or _CAM.none_unprompted_logged:
+        return
+    cycle = _camera_cycle_seconds()
+    if time.time() - _CAM.started >= cycle + CAMERA_POLL_SECONDS:
+        _CAM.none_unprompted_logged = True
+        log.info("No camera photo arrived without a request in the first %.1f h: "
+                 "farmhand sends photos only when asked",
+                 (cycle + CAMERA_POLL_SECONDS) / 3600)
+
+
+async def poll_cameras(client):
+    """get_last_images_local_only at start and every CAMERA_POLL_SECONDS."""
+    # Names come from get_farm_info, which poll_farmhand sends at start.
+    await _wait_until(lambda: _CAM.names, 2 * FH_REPLY_TIMEOUT)
+    while True:
+        delay = CAMERA_POLL_SECONDS
+        if _FARM_COMMAND_LOCK.locked():
+            # A command is mid-verify; leave farmhand to it.
+            delay = FH_POLL_RETRY_SECONDS
+        elif not await _request_camera_photos():
+            delay = FH_POLL_RETRY_SECONDS
+        publish_camera_stale(client)
+        _log_no_unprompted_photos()
+        await asyncio.sleep(delay)
+
+
+async def stream_farm_images(client):
+    timeout = aiohttp.ClientTimeout(total=None, sock_read=SSE_READ_TIMEOUT_SECONDS)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        log.debug("Connecting to photo stream: %s", IMAGES_URL)
+        async with session.get(IMAGES_URL,
+                               headers={"Accept": "text/event-stream"}) as response:
+            response.raise_for_status()
+            _CAM.connected = True
+            try:
+                async for text in _sse_events(response.content, "farm-images"):
+                    try:
+                        msg = json.loads(text)
+                    except json.JSONDecodeError:
+                        log.debug("farm-images: non-JSON event skipped")
+                        continue
+                    try:
+                        handle_camera_event(client, msg)
+                    except Exception:
+                        log.exception("farm-images: event handler failed")
+            finally:
+                _CAM.connected = False
+                _CAM.drops += 1
+
+
+async def run_farm_images(client):
+    """Same reconnect loop as /farm-data and /farm-monitoring, beside them."""
+    while True:
+        try:
+            await stream_farm_images(client)
+            log.debug("farm-images stream ended; reconnecting")
+        except asyncio.TimeoutError:
+            # Nothing for SSE_READ_TIMEOUT_SECONDS: normal between requests.
+            log.debug("farm-images stream idle; reconnecting")
+        except aiohttp.ClientError as e:
+            log.warning(f"farm-images stream dropped ({e}); reconnecting in "
+                        f"{RECONNECT_DELAY_SECONDS}s")
+        except Exception as e:
+            log.error(f"farm-images: unexpected error: {e}; reconnecting in "
+                      f"{RECONNECT_DELAY_SECONDS}s")
+        await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+
+
 def log_farm_identity():
     """Say up front which farm this is and what its entity IDs will be.
 
@@ -2205,7 +2577,9 @@ async def run_forever():
     background_tasks = [asyncio.create_task(run_farm_monitoring(mqtt_client)),
                         asyncio.create_task(poll_farmhand(mqtt_client)),
                         asyncio.create_task(watch_board_data(mqtt_client)),
-                        asyncio.create_task(watch_dosing_tanks(mqtt_client))]
+                        asyncio.create_task(watch_dosing_tanks(mqtt_client)),
+                        asyncio.create_task(run_farm_images(mqtt_client)),
+                        asyncio.create_task(poll_cameras(mqtt_client))]
 
     while True:
         try:
