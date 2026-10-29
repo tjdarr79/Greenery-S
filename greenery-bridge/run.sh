@@ -87,5 +87,17 @@ if bashio::config.true 'log_farm_monitoring'; then
     export FARM_LOG_MONITORING="1"
 fi
 
+# --- Dosing tank level sensors -------------------------------------------
+# The three per-tank lists go over as JSON, so a tank name may hold any
+# character. The bridge falls back to each default if one is missing.
+OPTIONS=/data/options.json
+export FARM_DOSING_TANK_NAMES="$(jq -c '.dosing_tank_names // empty' "${OPTIONS}")"
+export FARM_DOSING_TANK_INPUTS="$(jq -c '.dosing_tank_inputs // empty' "${OPTIONS}")"
+export FARM_DOSING_TANKS_ENABLED="$(jq -c '.dosing_tanks_enabled // empty' "${OPTIONS}")"
+export FARM_DOSING_LEVEL_LOW_VALUE="$(bashio::config 'dosing_level_low_value')"
+export FARM_DOSING_LEVEL_WINDOW_S="$(bashio::config 'dosing_level_window_s')"
+export FARM_DOSING_SENSOR_FAULT_CHANGES_PER_HOUR="$(bashio::config 'dosing_sensor_fault_changes_per_hour')"
+export FARM_DOSING_SILENT_DAYS="$(bashio::config 'dosing_silent_days')"
+
 bashio::log.info "Starting bridge"
 exec /opt/venv/bin/python3 -u /app/farm_bridge.py
