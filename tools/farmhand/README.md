@@ -2,13 +2,26 @@
 
 Scripts that talk to farmhand's own command channel, run by hand from a PC on
 the farm network (written for the owner's hydro PC: `py -3 <script>`).
-Standard library only. **Not needed to run the bridge.**
+Standard library only. **Not needed to run the bridge.** All read-only except
+`set_24hr.py`.
 
-Both send to `POST /farm-control` and read the answers on farmhand's second
-stream, `/farm-monitoring` — the HTTP reply is always
-`Control message received!` and proves nothing. Both have the Hub address
-(`HOST = "192.168.200.200"`, port `3001`) at the top of the file; change it
-there for a farm on another address.
+| Tool | What it does | Sends to farmhand |
+|---|---|---|
+| `dump_settings.py` | Saves farmhand's live settings, recipes, version, mode, modules | read-only commands farmhand's page sends on load |
+| `dump_cameras.py` | Saves the latest photo from each camera plus the raw messages | `read_cameras`, `get_last_images_local_only` (read-only) |
+| `dosing_levels.py [N]` | Prints the four dosing tank level inputs, N readings | nothing (listens only) |
+| `hvac_logger.py` | Logs HVAC calls, relays, temp, RH every 30 s to CSV | `get_farm_info` (read-only) |
+| `set_24hr.py status\|top\|bottom\|nursery\|water on\|off` | Reads or switches the 24-hour nursery light / watering settings | `bulk_update_settings` with ONLY the six `*_24hr_enable` keys; asks for "yes" first |
+
+Commands go to `POST /farm-control`; answers come back on farmhand's second
+stream, `/farm-monitoring` (photos on a third, `/farm-images`) — the HTTP reply
+is always `Control message received!` and proves nothing. Each script has the
+Hub address (`HOST = "192.168.200.200"`, port `3001`) at the top of the file;
+change it there for a farm on another address.
+
+Output goes to `results/`, which is gitignored: captures can contain farm
+photos and ids. Never commit them — `tests/fixtures/farmhand/` holds the
+cleaned-up copies the tests use.
 
 ## dump_settings.py — read-only
 

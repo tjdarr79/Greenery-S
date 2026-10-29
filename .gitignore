@@ -7,3 +7,6 @@ rendered/
 
 # Output of tools/farmhand/dump_settings.py - one farm's live settings
 tools/farmhand/results/
+
+# pytest
+.pytest_cache/

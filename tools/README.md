@@ -7,9 +7,10 @@ notice.
 Standard library only — no `pip install` required. The scripts in this folder
 are strictly read-only: they issue GET requests and never change farm state.
 
-`farmhand/` holds two run-by-hand scripts that use farmhand's command channel:
-a read-only settings dump, and `set_24hr.py`, which **writes** the 24-hour
-settings. See `farmhand/README.md`.
+`farmhand/` holds run-by-hand scripts that use farmhand's command channel and
+streams: read-only dumps of settings and camera photos, dosing-tank and HVAC
+loggers, and `set_24hr.py`, which **writes** the 24-hour settings. See
+`farmhand/README.md`.
 
 Run them on a machine that can reach the farm network.
 

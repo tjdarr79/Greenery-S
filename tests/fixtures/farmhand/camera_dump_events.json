@@ -1,0 +1,114 @@
+{
+  "events": [
+    {
+      "stream": "/farm-monitoring",
+      "t": 1792170296.0248828,
+      "response_to": "read_cameras",
+      "message": {
+        "response_to": "read_cameras",
+        "response": {
+          "E45F01CD2C40": {
+            "type": "camera",
+            "name": ""
+          },
+          "E45F01CD2C43": {
+            "type": "camera",
+            "name": ""
+          },
+          "E45F01CD2C6D": {
+            "type": "camera",
+            "name": ""
+          },
+          "E45F01CD2C73": {
+            "type": "camera",
+            "name": ""
+          },
+          "E45F01CD2C88": {
+            "type": "camera",
+            "name": ""
+          },
+          "E45F01CD2C8E": {
+            "type": "camera",
+            "name": ""
+          }
+        },
+        "error_message": "",
+        "controller_id": "00000000-0000-0000-0000-000000000001",
+        "request_id": ""
+      }
+    },
+    {
+      "stream": "/farm-monitoring",
+      "t": 1792170297.115317,
+      "response_to": "get_last_images_local_only",
+      "message": {
+        "response_to": "get_last_images_local_only",
+        "response": "SUCCESS",
+        "error_message": "",
+        "controller_id": "00000000-0000-0000-0000-000000000001",
+        "request_id": ""
+      }
+    },
+    {
+      "stream": "/farm-images",
+      "t": 1792170300.8371649,
+      "response_to": null,
+      "message": {
+        "camera": "E45F01CD2C40",
+        "image": "<1419392 chars: /9j/4WQGRXhpZgAATU0AKgAAAAgACgEAAAQAAAAB...>",
+        "last_update": 1792160573.8782678
+      }
+    },
+    {
+      "stream": "/farm-images",
+      "t": 1792170304.3700938,
+      "response_to": null,
+      "message": {
+        "camera": "E45F01CD2C43",
+        "image": "<1024696 chars: /9j/4WQGRXhpZgAATU0AKgAAAAgACgEAAAQAAAAB...>",
+        "last_update": 1792160562.6993387
+      }
+    },
+    {
+      "stream": "/farm-images",
+      "t": 1792170306.6278543,
+      "response_to": null,
+      "message": {
+        "camera": "E45F01CD2C6D",
+        "image": "<754032 chars: /9j/4WQGRXhpZgAATU0AKgAAAAgACgEAAAQAAAAB...>",
+        "last_update": 1792160557.4820497
+      }
+    },
+    {
+      "stream": "/farm-images",
+      "t": 1792170308.7911434,
+      "response_to": null,
+      "message": {
+        "camera": "E45F01CD2C73",
+        "image": "<1106548 chars: /9j/4WQGRXhpZgAATU0AKgAAAAgACgEAAAQAAAAB...>",
+        "last_update": 1792160566.9921367
+      }
+    },
+    {
+      "stream": "/farm-images",
+      "t": 1792170310.124668,
+      "response_to": null,
+      "message": {
+        "camera": "E45F01CD2C88",
+        "image": "<932868 chars: /9j/4WQGRXhpZgAATU0AKgAAAAgACgEAAAQAAAAB...>",
+        "last_update": 1792160568.8874679
+      }
+    },
+    {
+      "stream": "/farm-images",
+      "t": 1792170311.5775824,
+      "response_to": null,
+      "message": {
+        "camera": "E45F01CD2C8E",
+        "image": "<1130956 chars: /9j/4WQGRXhpZgAATU0AKgAAAAgACgEAAAQAAAAB...>",
+        "last_update": 1792160562.3246822
+      }
+    }
+  ],
+  "image_urls": []
+}

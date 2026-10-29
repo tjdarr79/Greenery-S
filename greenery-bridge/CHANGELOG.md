@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.0
+
+Cameras, latest photo only. Safe to upgrade: no existing entity ID changes and
+no new options.
+
+- **Six cameras** — Nursery Top, Nursery Bottom, Cultivation Left, Cultivation
+  Left Middle, Cultivation Right Middle, Cultivation Right — each showing its
+  latest photo, named from farmhand. Like the farmhand mobile app there is no
+  history: nothing is written to disk, and the broker keeps one photo per
+  camera so Home Assistant shows it after a restart. The app asks farmhand for
+  the latest photos at start and every 30 minutes (read-only; farmhand's own
+  page sends the same request) and publishes a photo only when it is new. See
+  DOCS.md, *Cameras*.
+- A **Photo Time** sensor per camera (diagnostic), and **Camera Photos
+  Stale**: on while any camera's photo is over 2.5 photo cycles (7.5 h) old.
+  New automation `23-camera-stale`, not critical, at most once every 24 h.
+- New `dashboard-cameras.yaml` for a Cameras view of its own, and a
+  **Cameras** button at the bottom of `dashboard-controls.yaml`. Re-paste the
+  controls card (or its rendered copy) to get the button.
+- After an hour of running, do the recorder check in DOCS.md, *Cameras →
+  Recorder*.
+
 ## 1.3.0
 
 Cool-Down, a fourth pump switch, 24-hour settings switches and the farmhand

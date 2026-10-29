@@ -36,10 +36,17 @@ REQUIRED = [
     "farm-alerts-script.yaml", "dashboard-controls.yaml",
     "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
+    "dashboard-cameras.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "tools/render-farm-yaml.py",
     "tools/farmhand/README.md", "tools/farmhand/dump_settings.py",
-    "tools/farmhand/set_24hr.py",
+    "tools/farmhand/set_24hr.py", "tools/farmhand/dump_cameras.py",
+    "tools/farmhand/dosing_levels.py", "tools/farmhand/hvac_logger.py",
+    "tests/conftest.py", "tests/test_cameras.py",
+    "tests/fixtures/farmhand/README.md",
+    "tests/fixtures/farmhand/farm_images_sample.sse",
+    "tests/fixtures/farmhand/camera_aliases.json",
+    "tests/fixtures/farmhand/farmhand_replies_2026-10-15.json",
     "repository.yaml",
     "greenery-bridge/config.yaml", "greenery-bridge/Dockerfile",
     "greenery-bridge/run.sh", "greenery-bridge/farm_bridge.py",
@@ -65,6 +72,7 @@ AUTOMATIONS = [
     "17-module-offline-dosing", "18-air-temp-low",
     "19-hvac-cooling-stuck", "20-send-pump-pressure",
     "21-cool-down-fault", "22-farmhand-version-changed",
+    "23-camera-stale",
 ]
 
 # Stale files that should have been removed or moved
@@ -129,6 +137,17 @@ MARKERS = {
         ("FH24_WRITABLE_KEYS = (", "settings write allow-list"),
         ("_check_settings_write(payload.get(\"settings\"))", "every command passes the allow-list"),
         ('"greenery_s_farmhand_version"', "farmhand Version sensor"),
+        ("async def stream_farm_images", "persistent /farm-images reader"),
+        ('{"command": "get_last_images_local_only"}', "photo request"),
+        ("CAMERA_POLL_SECONDS = 1800", "photos asked for every 30 min"),
+        ('"image_encoding": "b64"', "photo published as base64"),
+        ('update_camera_names(response.get("camera_aliases"))', "camera names from farmhand"),
+        ("CAMERA_FALLBACK = {", "camera table until camera_aliases arrives"),
+        ("if _CAM.photo_time.get(alias) == photo_time:", "an unchanged photo never republished"),
+        ("def camera_retained", "no republish after a restart"),
+        ('"greenery_s_camera_photos_stale"', "Camera Photos Stale sensor"),
+        ("CAMERA_STALE_CYCLES = 2.5", "stale after 2.5 photo cycles"),
+        ("WITHOUT a request", "unprompted photos logged"),
     ],
     "farm-alerts-script.yaml": [
         ("notify.send_message", "durable notify ENTITY path"),
@@ -162,6 +181,7 @@ MARKERS = {
         ("not for cleanouts", "Cool-Down kept out of cleanouts"),
         ("## 24-hour settings switches", "24-hour switches documentation"),
         ("## farmhand reply stream", "/farm-monitoring reader documented"),
+        ("## Cameras (latest photo only)", "cameras documentation"),
     ],
     "CONTRIBUTING.md": [
         ("git merge --ff-only main", "stable only fast-forwards to main"),
@@ -197,10 +217,14 @@ MARKERS = {
         ("`log_farm_monitoring`", "monitoring option documented"),
         ("## Cool-Down (phone only)", "Cool-Down documented"),
         ("## 24-hour settings", "24-hour switches documented"),
+        ("## Cameras", "cameras documented"),
+        ("Only the latest photo is kept", "no photo history, stated"),
+        ("- camera", "recorder exclude documented"),
     ],
     "tools/render-farm-yaml.py": [
         ("ENTITY_REF.subn", "entity IDs rewritten"),
         ("old entity IDs survived", "self-check of its own output"),
+        ('"dashboard-cameras.yaml"', "Cameras card rendered per farm"),
     ],
     "legacy/windows-installer/install/Install-FarmBridge.ps1": [
         ("Greenery S Farm Bridge", "scheduled task name"),
@@ -223,6 +247,13 @@ MARKERS = {
         ("End cool-down and resume the recipe?", "End Cool-Down confirmation"),
         ("title: 24-Hour Settings", "24-hour settings card"),
         ("sensor.greenery_s_farm_farmhand_version", "farmhand version on the card"),
+        ("navigation_path: farm-cameras", "button to the Cameras view"),
+    ],
+    "dashboard-cameras.yaml": [
+        ("type: picture-entity", "camera photo cards"),
+        ("show_state: false", "photo only, no state text"),
+        ("action: more-info", "tap opens the photo full size"),
+        ("binary_sensor.greenery_s_farm_camera_photos_stale", "stale row"),
     ],
     "tools/farmhand/set_24hr.py": [
         ("bulk_update_settings", "the 24-hour write command"),
@@ -399,6 +430,28 @@ def main():
                 ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
                 check(ent in text, f"{rel}: tile for {name}", f"expected {ent}")
 
+    print("\n--- Cameras: latest photo only ---")
+    # The owner chose no photo history: nothing on disk, ever. A file write in
+    # the bridge, or a history option or media map, is that decision undone.
+    try:
+        bridge_text = (root / "farm_bridge.py").read_text(encoding="utf-8")
+        writes = sorted({m.group(0) for m in re.finditer(
+            r"\bopen\(|write_bytes|write_text|\.mkdir\(|/media|/share|photo_history", bridge_text)})
+        check(not writes, "farm_bridge.py writes no files", ", ".join(writes))
+        cfg_text = (root / "greenery-bridge" / "config.yaml").read_text(encoding="utf-8")
+        left = [k for k in ("photo_history", "photo_keep_days", "media:rw") if k in cfg_text]
+        check(not left, "config.yaml has no photo history options or media map", ", ".join(left))
+        cams = _module_literal(ast.parse(bridge_text), "CAMERA_FALLBACK") or {}
+        card = (root / "dashboard-cameras.yaml").read_text(encoding="utf-8")
+        want = ["camera.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", n.lower()).strip("_") + "_camera"
+                for _module, n in cams.values()]
+        found = re.findall(r"entity: (camera\.\S+)", card)
+        check(len(cams) == 6 and found == want,
+              "dashboard-cameras.yaml shows the six cameras in CAMERA_FALLBACK order",
+              f"expected {want}")
+    except (OSError, SyntaxError) as e:
+        check(False, "camera checks readable", str(e)[:70])
+
     print("\n--- YAML parses ---")
     bdir = root / "greenery-bridge"
     for p in (sorted(root.glob("*.yaml"))
@@ -413,7 +466,9 @@ def main():
     print("\n--- Python parses ---")
     for rel in ["farm_bridge.py", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
                 "tools/render-farm-yaml.py", "tools/farmhand/dump_settings.py",
-                "tools/farmhand/set_24hr.py"]:
+                "tools/farmhand/set_24hr.py", "tools/farmhand/dump_cameras.py",
+                "tools/farmhand/dosing_levels.py", "tools/farmhand/hvac_logger.py",
+                "tests/conftest.py", "tests/test_cameras.py"]:
         p = root / rel
         if not p.is_file():
             check(False, f"{rel} (missing)")
@@ -471,12 +526,12 @@ def main():
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 1640, f"farm_bridge.py is {n} lines (expect ~1670)",
+        check(n >= 2000, f"farm_bridge.py is {n} lines (expect ~2050)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 1190, f"README.md is {n} lines (expect ~1215)",
+        check(n >= 1300, f"README.md is {n} lines (expect ~1325)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

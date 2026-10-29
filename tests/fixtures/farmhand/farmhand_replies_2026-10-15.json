@@ -1,0 +1,846 @@
+{
+  "get_farm_info": {
+    "response_to": "get_farm_info",
+    "response": {
+      "settings_files": [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000003",
+        "00000000-0000-0000-0000-000000000004",
+        "00000000-0000-0000-0000-000000000005",
+        "00000000-0000-0000-0000-000000000006",
+        "00000000-0000-0000-0000-000000000007",
+        "00000000-0000-0000-0000-000000000008",
+        "00000000-0000-0000-0000-000000000009",
+        "00000000-0000-0000-0000-000000000010",
+        "00000000-0000-0000-0000-000000000011",
+        "00000000-0000-0000-0000-000000000012",
+        "00000000-0000-0000-0000-000000000013",
+        "00000000-0000-0000-0000-000000000014",
+        "00000000-0000-0000-0000-000000000015",
+        "00000000-0000-0000-0000-000000000016",
+        "00000000-0000-0000-0000-000000000017"
+      ],
+      "settings": {
+        "recipe_name": "standard_lettuce",
+        "cultivation_left_red_dimming": [
+          "cultivation_left_red_270"
+        ],
+        "cultivation_right_red_dimming": [
+          "cultivation_right_red_270"
+        ],
+        "day_length": 64800,
+        "cultivation_ec_flag": 1,
+        "cultivation_ph_down_flag": 1,
+        "cultivation_ph_up_flag": 0,
+        "nursery_ec_flag": 0,
+        "nursery_ph_down_flag": 0,
+        "nursery_ph_up_flag": 0,
+        "call_for_stop_ec_dose": 0,
+        "call_for_stop_nursery_recirc": 0,
+        "call_for_stop_cultivation_recirc": 0,
+        "call_for_cooling": 0,
+        "call_for_dehum": 1,
+        "call_for_heating": 0,
+        "call_for_safety_ventilation": 0,
+        "call_for_qc_dosing": 0,
+        "nursery_autodose_enable_ec": 1,
+        "nursery_autodose_enable_ph": 1,
+        "cultivation_autodose_enable_ec": 1,
+        "cultivation_autodose_enable_ph": 1,
+        "cultivation_left_water_enable": 1,
+        "cultivation_right_water_enable": 1,
+        "call_for_cultivation_right_water": 1,
+        "call_for_cultivation_left_water": 0,
+        "call_for_nursery_top_water": 0,
+        "call_for_nursery_bottom_water": 1,
+        "cultivation_left_water_24hr_enable": 1,
+        "cultivation_right_water_24hr_enable": 1,
+        "nursery_top_water_enable": 1,
+        "nursery_bottom_water_enable": 0,
+        "cultivation_recirc_enable": 1,
+        "nursery_recirc_enable": 1,
+        "pgm_night_temperature": 18.333333333333336,
+        "pgm_day_temperature": 21.11111111111111,
+        "pgm_night_rh": 70,
+        "pgm_day_rh": 70,
+        "pgm_night_co2": 0,
+        "pgm_day_co2": 1000,
+        "pgm_nursery_day_ec": 1200,
+        "pgm_nursery_night_ec": 1200,
+        "pgm_nursery_day_ph": 5.8,
+        "pgm_nursery_night_ph": 5.8,
+        "pgm_cultivation_day_ec": 1600,
+        "pgm_cultivation_night_ec": 1600,
+        "pgm_cultivation_day_ph": 6,
+        "pgm_cultivation_night_ph": 6,
+        "pgm_nursery_top_red_on_delay": 0,
+        "pgm_nursery_top_red_off_delay": 64800,
+        "pgm_nursery_top_blue_on_delay": 0,
+        "pgm_nursery_top_blue_off_delay": 64800,
+        "pgm_nursery_bottom_red_on_delay": 0,
+        "pgm_nursery_bottom_red_off_delay": 64800,
+        "pgm_nursery_bottom_blue_on_delay": 0,
+        "pgm_nursery_bottom_blue_off_delay": 64800,
+        "pgm_cultivation_right_red_on_delay": 0,
+        "pgm_cultivation_right_red_off_delay": 64800,
+        "pgm_cultivation_right_blue_on_delay": 0,
+        "pgm_cultivation_right_blue_off_delay": 50400,
+        "pgm_cultivation_left_red_on_delay": 0,
+        "pgm_cultivation_left_red_off_delay": 64800,
+        "pgm_cultivation_left_blue_on_delay": 0,
+        "pgm_cultivation_left_blue_off_delay": 50400,
+        "pgm_nursery_cycle_length": 28800,
+        "pgm_nursery_top_water_length": 600,
+        "pgm_nursery_bottom_water_length": 600,
+        "pgm_cultivation_left_water_length": 300,
+        "pgm_cultivation_right_water_length": 300,
+        "pgm_cultivation_cycle_length": 1200,
+        "nursery_top_red_24hr_enable": 1,
+        "nursery_top_blue_24hr_enable": 1,
+        "nursery_bottom_red_24hr_enable": 1,
+        "nursery_bottom_blue_24hr_enable": 1,
+        "units": "imperial",
+        "farm_name": "default",
+        "base_config_version": 1.2,
+        "config_type": "greenery-s",
+        "day_start": 79200,
+        "deadband_temperature": -1,
+        "deadband_humidity": -3,
+        "deadband_ec_cultivation": -400,
+        "deadband_ec_nursery": -200,
+        "deadband_ph_up": -0.2,
+        "deadband_ph_down": 0.2,
+        "maximum_temperature": 27,
+        "keepalive_temperature": -100,
+        "keepalive_time": 300,
+        "minimum_temperature": 13,
+        "maximum_co2_enable": 2400,
+        "maximum_co2_disable": 2200,
+        "autofill_drain_time_cultivation": 1200,
+        "autofill_drain_time_nursery": 2400,
+        "maximum_autofill": 70,
+        "minimum_autofill": 40,
+        "minimum_cultivation_send_level": 20,
+        "minimum_nursery_send_level": 20,
+        "minimum_cultivation_recirc_level": 15,
+        "minimum_nursery_recirc_level": 15,
+        "min_time_between_ec": 2200,
+        "min_time_between_ph": 2400,
+        "min_time_after_ec_before_ph": 2500,
+        "cultivation_ec_a_dose_length": 31.858407079646017,
+        "nursery_ec_a_dose_length": 10.619469026548673,
+        "cultivation_ec_b_dose_length": 41.415929203539825,
+        "nursery_ec_b_dose_length": 13.805309734513274,
+        "cultivation_ec_a_dose_length_three_part": 31.858,
+        "nursery_ec_a_dose_length_three_part": 15.929,
+        "cultivation_ec_b_dose_length_three_part": 31.858,
+        "nursery_ec_b_dose_length_three_part": 15.929,
+        "cultivation_ec_c_dose_length_three_part": 15.929,
+        "nursery_ec_c_dose_length_three_part": 0,
+        "cultivation_ec_spike_dose_length": 265.48141592920354,
+        "nursery_ec_spike_dose_length": 159.29,
+        "cultivation_ph_down_dose_length": 5.3097345132743365,
+        "nursery_ph_down_dose_length": 2.6548672566371683,
+        "cultivation_ph_up_dose_length": 5.3097345132743365,
+        "nursery_ph_up_dose_length": 2.6548672566371683,
+        "cultivation_dosing_flowrate_ml_per_min": 113,
+        "nursery_dosing_flowrate_ml_per_min": 113,
+        "three_part_dosing_enable": 1,
+        "co2_dose_length": 60,
+        "cultivation_water_offset": 600,
+        "nursery_water_offset": 3600,
+        "nursery_sensor_top_delay": 60,
+        "nursery_sensor_bottom_delay": 60,
+        "blower_turbo_threshold_day": 62,
+        "blower_turbo_threshold_night": 0,
+        "enable_autodosing_delay": 600,
+        "image_cycle_time": 10800,
+        "autofill_run_time": 900,
+        "min_time_between_autofill": 3600
+      },
+      "globals": {
+        "units": "imperial",
+        "farm_name": "default",
+        "base_config_version": 1.2,
+        "config_type": "greenery-s",
+        "day_start": 79200,
+        "deadband_temperature": -1,
+        "deadband_humidity": -3,
+        "deadband_ec_cultivation": -400,
+        "deadband_ec_nursery": -200,
+        "deadband_ph_up": -0.2,
+        "deadband_ph_down": 0.2,
+        "maximum_temperature": 27,
+        "keepalive_temperature": -100,
+        "keepalive_time": 300,
+        "minimum_temperature": 13,
+        "maximum_co2_enable": 2400,
+        "maximum_co2_disable": 2200,
+        "autofill_drain_time_cultivation": 1200,
+        "autofill_drain_time_nursery": 2400,
+        "maximum_autofill": 70,
+        "minimum_autofill": 40,
+        "minimum_cultivation_send_level": 20,
+        "minimum_nursery_send_level": 20,
+        "minimum_cultivation_recirc_level": 15,
+        "minimum_nursery_recirc_level": 15,
+        "min_time_between_ec": 2200,
+        "min_time_between_ph": 2400,
+        "min_time_after_ec_before_ph": 2500,
+        "cultivation_ec_a_dose_length": 31.858407079646017,
+        "nursery_ec_a_dose_length": 10.619469026548673,
+        "cultivation_ec_b_dose_length": 41.415929203539825,
+        "nursery_ec_b_dose_length": 13.805309734513274,
+        "cultivation_ec_a_dose_length_three_part": 31.858,
+        "nursery_ec_a_dose_length_three_part": 15.929,
+        "cultivation_ec_b_dose_length_three_part": 31.858,
+        "nursery_ec_b_dose_length_three_part": 15.929,
+        "cultivation_ec_c_dose_length_three_part": 15.929,
+        "nursery_ec_c_dose_length_three_part": 0,
+        "cultivation_ec_spike_dose_length": 265.48141592920354,
+        "nursery_ec_spike_dose_length": 159.29,
+        "cultivation_ph_down_dose_length": 5.3097345132743365,
+        "nursery_ph_down_dose_length": 2.6548672566371683,
+        "cultivation_ph_up_dose_length": 5.3097345132743365,
+        "nursery_ph_up_dose_length": 2.6548672566371683,
+        "cultivation_dosing_flowrate_ml_per_min": 113,
+        "nursery_dosing_flowrate_ml_per_min": 113,
+        "three_part_dosing_enable": 1,
+        "co2_dose_length": 60,
+        "cultivation_water_offset": 600,
+        "nursery_water_offset": 3600,
+        "nursery_sensor_top_delay": 60,
+        "nursery_sensor_bottom_delay": 60,
+        "blower_turbo_threshold_day": 62,
+        "blower_turbo_threshold_night": 0,
+        "enable_autodosing_delay": 600,
+        "image_cycle_time": 10800,
+        "autofill_run_time": 900,
+        "min_time_between_autofill": 3600
+      },
+      "module_aliases": {
+        "air_temperature": {
+          "module": "94E68607D090",
+          "io": "temp",
+          "name": "Air temperature",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 0
+        },
+        "relative_humidity": {
+          "module": "94E68607D090",
+          "io": "RH",
+          "name": "Humidity",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 1
+        },
+        "co2": {
+          "module": "94E68607D090",
+          "io": "CO2",
+          "name": "CO2",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 2
+        },
+        "top_trough_level": {
+          "module": "8C4B14715024",
+          "io": "digital_1",
+          "name": "Top trough level",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": -1
+        },
+        "bottom_trough_level": {
+          "module": "8C4B14715024",
+          "io": "digital_2",
+          "name": "Bottom trough level",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": -1
+        },
+        "nursery_tank_depth": {
+          "module": "8C4B14715024",
+          "io": "analog_2",
+          "name": "Nursery tank depth",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 0
+        },
+        "cultivation_tank_depth": {
+          "module": "8C4B14715024",
+          "io": "analog_1",
+          "name": "Cultivation tank depth",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 0
+        },
+        "cultivation_right_send_pressure": {
+          "module": "8C4B14715024",
+          "io": "analog_4",
+          "name": "Right send pressure",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 1
+        },
+        "cultivation_left_send_pressure": {
+          "module": "8C4B14715024",
+          "io": "analog_3",
+          "name": "Left send pressure",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 2
+        },
+        "nutrient_a_level": {
+          "module": "E831CDC7E680",
+          "io": "digital_1",
+          "name": "Nutrient A level",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 0
+        },
+        "nutrient_b_level": {
+          "module": "E831CDC7E680",
+          "io": "digital_2",
+          "name": "Nutrient B level",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 1
+        },
+        "ph_down_level": {
+          "module": "E831CDC7E680",
+          "io": "digital_3",
+          "name": "pH down level",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 2
+        },
+        "ph_up_level": {
+          "module": "E831CDC7E680",
+          "io": "digital_4",
+          "name": "Boost / pH up level",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 3
+        },
+        "nursery_top_send": {
+          "module": "244CAB0FC00C",
+          "io": "output_6",
+          "name": "Top trough pump",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 6
+        },
+        "nursery_bottom_send": {
+          "module": "244CAB0FC00C",
+          "io": "output_7",
+          "name": "Bottom trough pump",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 7
+        },
+        "nursery_recirculation": {
+          "module": "244CAB0FC00C",
+          "io": "output_8",
+          "name": "Recirculation pump",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 1
+        },
+        "nursery_autofill": {
+          "module": "244CAB0FC00C",
+          "io": "output_5",
+          "name": "Autofill valve",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 12
+        },
+        "cultivation_left_send": {
+          "module": "244CAB0FC00C",
+          "io": "output_2",
+          "name": "Left send pump",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 10
+        },
+        "cultivation_right_send": {
+          "module": "244CAB0FC00C",
+          "io": "output_3",
+          "name": "Right send pump",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 11
+        },
+        "cultivation_recirculation": {
+          "module": "244CAB0FC00C",
+          "io": "output_1",
+          "name": "Recirculation pump",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 1
+        },
+        "cultivation_autofill": {
+          "module": "244CAB0FC00C",
+          "io": "output_4",
+          "name": "Autofill valve",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 16
+        },
+        "nursery_top_red": {
+          "module": "244CAB0FC00C",
+          "io": "output_17",
+          "name": "Top red lights",
+          "zone": "Nursery",
+          "aliased_zone": "zone_2",
+          "order": 2,
+          "io_override": ""
+        },
+        "nursery_top_blue": {
+          "module": "244CAB0FC00C",
+          "io": "output_18",
+          "name": "Top blue lights",
+          "zone": "Nursery",
+          "aliased_zone": "zone_2",
+          "order": 4,
+          "io_override": ""
+        },
+        "nursery_bottom_red": {
+          "module": "244CAB0FC00C",
+          "io": "output_19",
+          "name": "Bottom red lights",
+          "zone": "Nursery",
+          "aliased_zone": "zone_2",
+          "order": 3,
+          "io_override": ""
+        },
+        "nursery_bottom_blue": {
+          "module": "244CAB0FC00C",
+          "io": "output_20",
+          "name": "Bottom blue lights",
+          "zone": "Nursery",
+          "aliased_zone": "zone_2",
+          "order": 5,
+          "io_override": ""
+        },
+        "nursery_work": {
+          "module": "244CAB0FC00C",
+          "io": "output_21",
+          "name": "Work lights",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 0
+        },
+        "cultivation_left_red_a": {
+          "module": "244CAB0FC00C",
+          "io": "output_25",
+          "name": "Left red lights - A",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 2
+        },
+        "cultivation_left_red_b": {
+          "module": "244CAB0FC00C",
+          "io": "output_26",
+          "name": "Left red lights - B",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 4
+        },
+        "cultivation_left_red_c": {
+          "module": "244CAB0FC00C",
+          "io": "output_27",
+          "name": "Left red lights - C",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 6
+        },
+        "cultivation_left_blue": {
+          "module": "244CAB0FC00C",
+          "io": "output_28",
+          "name": "Left blue lights",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 8
+        },
+        "cultivation_right_red_a": {
+          "module": "244CAB0FC00C",
+          "io": "output_29",
+          "name": "Right red lights - A",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 3
+        },
+        "cultivation_right_red_b": {
+          "module": "244CAB0FC00C",
+          "io": "output_30",
+          "name": "Right red lights - B",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 5
+        },
+        "cultivation_right_red_c": {
+          "module": "244CAB0FC00C",
+          "io": "output_31",
+          "name": "Right red lights - C",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 7
+        },
+        "cultivation_right_blue": {
+          "module": "244CAB0FC00C",
+          "io": "output_32",
+          "name": "Right blue lights",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 9
+        },
+        "cultivation_work": {
+          "module": "244CAB0FC00C",
+          "io": "output_22",
+          "name": "Work lights",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 0
+        },
+        "exhaust_fan": {
+          "module": "244CAB0FC00C",
+          "io": "output_12",
+          "name": "Exhaust fan",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 5
+        },
+        "overhead_fan": {
+          "module": "244CAB0FC00C",
+          "io": "output_11",
+          "name": "Overhead fan",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 1
+        },
+        "duct_fans": {
+          "module": "244CAB0FC00C",
+          "io": "output_10",
+          "name": "Duct fans",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 3
+        },
+        "hvac_cooling": {
+          "module": "244CAB0FC00C",
+          "io": "output_14",
+          "name": "HVAC cooling",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 2
+        },
+        "hvac_heating": {
+          "module": "244CAB0FC00C",
+          "io": "output_15",
+          "name": "HVAC heating",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 0
+        },
+        "hvac_blower": {
+          "module": "244CAB0FC00C",
+          "io": "output_13",
+          "name": "HVAC blower",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 4
+        },
+        "co2_regulator": {
+          "module": "244CAB0FC00C",
+          "io": "output_9",
+          "name": "CO2 regulator",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 7
+        },
+        "hvac_blower_turbo": {
+          "module": "244CAB0FC00C",
+          "io": "output_16",
+          "name": "HVAC blower turbo",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 6
+        },
+        "spare_output": {
+          "module": "244CAB0FC00C",
+          "io": "output_23",
+          "name": "Spare outlet",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 8
+        },
+        "nursery_ec": {
+          "module": "244CAB0FD624",
+          "io": "ec",
+          "name": "EC",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 2
+        },
+        "nursery_ph": {
+          "module": "244CAB0FD624",
+          "io": "pH",
+          "name": "pH",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 1
+        },
+        "nursery_water_temperature": {
+          "module": "244CAB0FD624",
+          "io": "temp",
+          "name": "Temperature",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 0
+        },
+        "nursery_nutrient_a": {
+          "module": "244CAB0FD624",
+          "io": "pump_1",
+          "name": "Nutrient A",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 8
+        },
+        "nursery_nutrient_b": {
+          "module": "244CAB0FD624",
+          "io": "pump_2",
+          "name": "Nutrient B",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 9
+        },
+        "nursery_ph_down": {
+          "module": "244CAB0FD624",
+          "io": "pump_3",
+          "name": "pH down",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 10
+        },
+        "nursery_ph_up": {
+          "module": "244CAB0FD624",
+          "io": "pump_4",
+          "name": "Nutrient C",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 11
+        },
+        "cultivation_ec": {
+          "module": "94E68607D218",
+          "io": "ec",
+          "name": "EC",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 2
+        },
+        "cultivation_ph": {
+          "module": "94E68607D218",
+          "io": "pH",
+          "name": "pH",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 1
+        },
+        "cultivation_water_temperature": {
+          "module": "94E68607D218",
+          "io": "temp",
+          "name": "Temperature",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 0
+        },
+        "cultivation_nutrient_a": {
+          "module": "94E68607D218",
+          "io": "pump_1",
+          "name": "Nutrient A",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 12
+        },
+        "cultivation_nutrient_b": {
+          "module": "94E68607D218",
+          "io": "pump_2",
+          "name": "Nutrient B",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 13
+        },
+        "cultivation_ph_down": {
+          "module": "94E68607D218",
+          "io": "pump_3",
+          "name": "pH down",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 14
+        },
+        "cultivation_ph_up": {
+          "module": "94E68607D218",
+          "io": "pump_4",
+          "name": "Nutrient C",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 15
+        }
+      },
+      "camera_aliases": {
+        "nursery_top": {
+          "module": "E45F01CD2C40",
+          "name": "Nursery Top",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "rotation": 0
+        },
+        "nursery_bottom": {
+          "module": "E45F01CD2C43",
+          "name": "Nursery Bottom",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "rotation": 0
+        },
+        "cultivation_left": {
+          "module": "E45F01CD2C8E",
+          "name": "Cultivation Left",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "rotation": 0
+        },
+        "cultivation_left_center": {
+          "module": "E45F01CD2C73",
+          "name": "Cultivation Left Middle",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "rotation": 0
+        },
+        "cultivation_right_center": {
+          "module": "E45F01CD2C6D",
+          "name": "Cultivation Right Middle",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "rotation": 0
+        },
+        "cultivation_right": {
+          "module": "E45F01CD2C88",
+          "name": "Cultivation Right",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "rotation": 0
+        }
+      },
+      "modes": {
+        "climate_calibration": {
+          "entry_action": "climate_calibration_entry",
+          "exit_action": "climate_calibration_exit",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 0
+        },
+        "task_mode": {
+          "entry_action": "pause_recipe_entry",
+          "exit_action": "pause_recipe_exit",
+          "aliased_zone": "zone_1",
+          "zone": "Container",
+          "order": 1
+        },
+        "nursery_calibration": {
+          "entry_action": "nursery_calibration_entry",
+          "exit_action": "nursery_calibration_exit",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 0
+        },
+        "nursery_cleaning": {
+          "entry_action": "nursery_cleaning_entry",
+          "exit_action": "nursery_cleaning_exit",
+          "aliased_zone": "zone_2",
+          "zone": "Nursery",
+          "order": 1
+        },
+        "cultivation_calibration": {
+          "entry_action": "cultivation_calibration_entry",
+          "exit_action": "cultivation_calibration_exit",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 0
+        },
+        "cultivation_cleaning": {
+          "entry_action": "cultivation_cleaning_entry",
+          "exit_action": "cultivation_cleaning_exit",
+          "aliased_zone": "zone_3",
+          "zone": "Cultivation",
+          "order": 1
+        }
+      },
+      "current_mode": "",
+      "zone_aliases": {
+        "zone_1": {
+          "zone": "Container",
+          "zone_order": 0
+        },
+        "zone_2": {
+          "zone": "Nursery",
+          "zone_order": 1
+        },
+        "zone_3": {
+          "zone": "Cultivation",
+          "zone_order": 2
+        }
+      }
+    },
+    "error_message": "",
+    "controller_id": "00000000-0000-0000-0000-000000000018",
+    "request_id": ""
+  },
+  "get_version": {
+    "response_to": "get_version",
+    "response": "2.0.26",
+    "error_message": "",
+    "controller_id": "00000000-0000-0000-0000-000000000018",
+    "request_id": ""
+  },
+  "get_current_mode": {
+    "response_to": "get_current_mode",
+    "response": "",
+    "error_message": "",
+    "controller_id": "00000000-0000-0000-0000-000000000018",
+    "request_id": ""
+  },
+  "read_modules": {
+    "response_to": "read_modules",
+    "response": {
+      "E831CDC7E680": {
+        "type": "input",
+        "name": ""
+      },
+      "94E68607D218": {
+        "type": "dosing",
+        "name": ""
+      },
+      "8C4B14715024": {
+        "type": "input",
+        "name": ""
+      },
+      "94E68607D090": {
+        "type": "environmental",
+        "name": ""
+      },
+      "244CAB0FC00C": {
+        "type": "output",
+        "name": ""
+      },
+      "244CAB0FD624": {
+        "type": "dosing",
+        "name": ""
+      }
+    },
+    "error_message": "",
+    "controller_id": "00000000-0000-0000-0000-000000000018",
+    "request_id": ""
+  }
+}
