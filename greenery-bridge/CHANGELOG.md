@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.4.0
+
+Dosing tank levels. Safe to upgrade: no existing entity ID changes. Seven new
+options, all with defaults matching 3 Corners Farm.
+
+- Four **dosing tank level** sensors, read from module `E831CDC7E680` like
+  farmhand's Environmental card: **Nutrient A Level**, **Nutrient B Level**,
+  **pH Down Level**, **Boost / pH Up Level** — *OK*, or *Problem* when the tank
+  is low. A rolling 10-minute window decides, so a corroded connector's
+  flicker never reads as low. Attribute `low_percent` for tuning.
+- Per tank: **Sensor Fault** (diagnostic, more than 20 reading changes in an
+  hour; the level holds while it is on), **Days Since Refill**, and a
+  **Refilled** button.
+- **A dead or unplugged sensor reads OK**, like a full tank, in farmhand too.
+  A tank with no Low and no Refilled press in 21 days sends a reminder to
+  check its sensor, weekly. Press Refilled after every refill.
+- Alerts timed by the app, delivered by the new automation
+  `23-dosing-tank-alert`: tank low (every 12 h while low), sensor unstable (at
+  most daily), sensor silent (weekly). Their timers survive restarts. None is
+  critical; no alert for *unavailable* (module missing over 60 s).
+- New options: `dosing_tank_names`, `dosing_tank_inputs`,
+  `dosing_tanks_enabled`, `dosing_level_low_value` (set `0` if Home Assistant
+  reads the opposite of farmhand), `dosing_level_window_s`,
+  `dosing_sensor_fault_changes_per_hour`, `dosing_silent_days`. See DOCS.md,
+  *Dosing tank levels*.
+- Published on change only: nothing reaches the recorder while the tanks sit
+  full.
+- Paste `23-dosing-tank-alert.yaml`, and re-paste `farm-dashboard.yaml` and
+  `farm-dashboard-mobile.yaml` (or their rendered copies) for the **Dosing
+  Tanks** card under Environmental. `tools/farmhand/dosing_levels.py` prints
+  the raw inputs.
+
 ## 1.3.0
 
 Cool-Down, a fourth pump switch, 24-hour settings switches and the farmhand

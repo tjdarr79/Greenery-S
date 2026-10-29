@@ -3,7 +3,8 @@
 Reads your Freight Farms Greenery S local Farmhand endpoint and publishes
 everything to Home Assistant over MQTT: sensors, all 32 relay channels, module
 health, one-tap Task Mode controls, pump switches that work only in Task Mode,
-a one-tap Cool-Down, and switches for farmhand's 24-hour settings.
+a one-tap Cool-Down, switches for farmhand's 24-hour settings, and the four
+dosing tank levels with low and sensor-fault alerts.
 
 No farmhand cloud subscription is needed for any of it.
 
@@ -35,6 +36,13 @@ Home Assistant automatically — there is nothing to type.
 | `mqtt_port` | `0` | Blank/0 means 1883 |
 | `mqtt_user` | *(blank)* | Only for an external broker |
 | `mqtt_password` | *(blank)* | Only for an external broker |
+| `dosing_tank_names` | `Nutrient A`, `Nutrient B`, `pH Down`, `Boost / pH Up` | One per tank, farmhand's order. **Set before the first start** — see [Dosing tank levels](#dosing-tank-levels) |
+| `dosing_tank_inputs` | `digital_1` … `digital_4` | The input each tank's sensor is wired to. Swap two to fix a swapped wire |
+| `dosing_tanks_enabled` | `true` ×4 | A tank set `false` gets no entities and no alerts |
+| `dosing_level_low_value` | `1` | The raw value that means low. `0` if HA reads backwards |
+| `dosing_level_window_s` | `600` | Readings window the level is decided over |
+| `dosing_sensor_fault_changes_per_hour` | `20` | More changes than this in an hour → Sensor Fault |
+| `dosing_silent_days` | `21` | No Low and no Refilled press this long → silent-sensor reminder |
 
 **Leave every `mqtt_*` field blank** unless you run a broker outside Home
 Assistant. Filling them in overrides the automatic detection.
@@ -152,7 +160,7 @@ back from a bad release.
 **Settings → Devices & Services → MQTT → your farm name** (`Greenery S Farm`
 unless you changed it).
 
-You should see roughly 70 entities. Note the device lives *inside* the MQTT
+You should see roughly 85 entities. Note the device lives *inside* the MQTT
 card — it is not listed at the top level of Devices & Services, which is easy
 to miss.
 
@@ -266,10 +274,130 @@ use commands Freight Farms never documented.
 `log_farm_monitoring` logs the first 20 events of that stream after each start,
 for investigating a new reply. Leave it off otherwise.
 
+## Dosing tank levels
+
+Each 1-gallon dosing tank has an optical level sensor that trips when the tank
+is almost empty (Owner's Manual: *Dosing Tank Level Sensors*). farmhand shows
+them on its Environmental card as *ok* or low. The app reads the same four
+inputs, module `E831CDC7E680`, and adds per tank:
+
+| Entity | Shows |
+|---|---|
+| **Nutrient A Level** (etc.) | **OK**, or **Problem** (red) when the tank is low. Attribute `low_percent` |
+| **Nutrient A Sensor Fault** | Diagnostic. On while the sensor flickers |
+| **Nutrient A Days Since Refill** | Days since the last refill: a **Refilled** press, or the sensor going low then ok |
+| **Nutrient A Refilled** | Button. Press it after refilling the tank |
+
+| Order | Tank | Owner's product | Input |
+|---|---|---|---|
+| 1 | Nutrient A | Form | `digital_1` |
+| 2 | Nutrient B | Grow | `digital_2` |
+| 3 | pH Down | pH Down | `digital_3` |
+| 4 | Boost / pH Up | Boost | `digital_4` |
+
+The **Dosing Tanks** card sits under **Environmental** in `farm-dashboard.yaml`
+and `farm-dashboard-mobile.yaml`, in farmhand's order, with a row of four
+**Refilled** buttons, each confirmed, underneath. A Sensor Fault row appears
+only while that fault is on. Home Assistant labels the problem class *OK* /
+*Problem*; it has no "LOW" label.
+
+### A dead sensor reads OK
+
+An unplugged, broken or dead sensor reads 0, which is **OK**, exactly like a
+full tank, and farmhand shows it the same way. Nothing in the data tells the
+two apart. Owner test, 2026-10-29: with the Grow sensor unplugged, `digital_2`
+read a steady 0 and farmhand showed Grow *ok*.
+
+So the app watches for silence instead. A tank that has not reported low, and
+has had no Refilled press, in `dosing_silent_days` (21 days; a tank normally
+lasts about a week) sends a low-priority reminder: *"Nutrient A hasn't
+reported low in 21 days. Check the sensor and its connector."* It repeats
+weekly until the clock restarts.
+
+**Press Refilled after every refill.** That restarts the tank's clock and sets
+Days Since Refill to 0. A sensor seen going low and then ok again restarts it
+too. Without the presses, a tank whose sensor never trips because it is
+always topped up early reads exactly like a dead sensor.
+
+> **3 Corners Farm, Nutrient B (Grow):** the plug is broken by corrosion and
+> reads ok whatever the level until it is replaced (Growcer, parts or
+> service). Until then, check that tank by eye.
+
+### Flicker and Sensor Fault
+
+Corroded connectors make the inputs flicker. In the owner's tests with every
+tank full, Grow and Boost flickered to 1 (Boost on 5 of 5 readings in one
+run). After the connectors were cleaned, Grow still read 1 on 2 of 10. So no
+single reading decides anything:
+
+- **Level** is decided over a rolling window of readings,
+  `dosing_level_window_s` (600 s). It goes **Low** when 80% or more of the
+  readings in a full window read low, and **OK** at 20% or less. In between,
+  it holds. It is never decided from a partial window: after the app starts,
+  or after the module comes back, the Level keeps its last state (or shows
+  *unknown* on a first install) until a full window has passed. Attribute
+  `low_percent` is the current share, for tuning.
+- **Sensor Fault** turns on when the reading changes more than
+  `dosing_sensor_fault_changes_per_hour` (20) times within an hour. It turns
+  off after an hour with 5 changes or fewer. While it is on, the Level holds
+  and sends no low alert. Clean or replace the connector.
+
+### If Home Assistant reads backwards
+
+Low is **assumed** to read 1: no real low tank had been seen when this was
+built. The first time farmhand shows a tank low, Home Assistant must show the
+same tank **Problem** within about 10 minutes and send one alert. If Home
+Assistant shows the opposite of farmhand (for example every full tank showing
+Problem), set `dosing_level_low_value` to `0`, save, restart the app and
+check again.
+
+A tank showing another tank's state is a swapped wire: swap the two entries
+in `dosing_tank_inputs`. `tools/farmhand/dosing_levels.py` prints the raw
+inputs to compare with farmhand.
+
+### Alerts
+
+The app decides when to alert and `23-dosing-tank-alert` delivers each alert
+through the alert script, so the titles carry the farm name.
+
+| Event | Message | Repeat |
+|---|---|---|
+| Tank goes Low | *Smith Farm: Nutrient A tank low. Refill it.* | every 12 h while low |
+| Sensor Fault on | *Smith Farm: Nutrient B tank sensor unstable. Check its connector.* | at most every 24 h |
+| Silent sensor | *Smith Farm: Nutrient A hasn't reported low in 21 days. …* | weekly |
+
+None is critical. The alert script has two levels, critical and normal, so the
+spec's *low* priority goes out as a normal push. It differs only in how often
+it repeats. The repeat timers are kept on the broker (retained,
+`farm/dosing_tank_N/memory`), so restarting the app or Home Assistant neither
+repeats an alert nor forgets one.
+
+**No alert for unavailable.** If module `E831CDC7E680` is missing from the
+data for more than 60 s, the Level and Sensor Fault entities go
+*unavailable*, never Low. A routine data-stream reconnect, a few seconds about
+once a minute, changes nothing. This module is **not** among the five that
+module-offline detection covers, so the dashboard showing *unavailable* is the
+only sign.
+
+### Names, entities and the recorder
+
+The names set the entity names. Like `farm_name`, they decide the entity IDs
+the first time Home Assistant sees them (`Nutrient A Level` gives
+`binary_sensor.greenery_s_farm_nutrient_a_level`), and the dashboards name
+the default IDs. Set `dosing_tank_names` before the first start, or leave it.
+Unique IDs and MQTT topics follow the tank's position (1-4), never its name,
+so a later rename keeps each entity and its history. A tank turned off in
+`dosing_tanks_enabled` loses its entities: delete its rows and its Refilled
+button from the Dosing Tanks card.
+
+Every state is published only when it changes, so the recorder stores only
+changes: none while the tanks sit full, and well under 10 rows an hour for
+all sixteen entities otherwise.
+
 ## Then set up the alerts
 
 This add-on delivers the data. The alerting — the notification script and the
-twenty-two automations — is pasted into the Home Assistant UI and is not part of
+twenty-three automations — is pasted into the Home Assistant UI and is not part of
 the add-on.
 
 Follow `README.md` in the repository, section **New install**, from step 3.

@@ -17,7 +17,7 @@ CONFIRMED DEVICE MAP (do not change without re-verifying against dashboard):
                         analog_4 -> Right send pressure
     244CAB0FC00C  -> 32-channel output relay (NOT YET MAPPED to function - published
                       as raw output_N booleans only, no friendly names yet)
-    E831CDC7E680  -> Idle / unused input module (not published)
+    E831CDC7E680  -> Dosing tank level sensors, digital_1..4 (see DOSING TANK LEVELS)
 
 Requires: pip install aiohttp paho-mqtt --break-system-packages
 """
@@ -25,11 +25,13 @@ Requires: pip install aiohttp paho-mqtt --break-system-packages
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import threading
 import time
 import unicodedata
+from collections import deque
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -1049,6 +1051,533 @@ def publish_module_discovery(client, availability_topic: str):
         log.info(f"Published discovery config for {bsensor.name}")
 # --- END module offline detection ---
 
+# --- BEGIN dosing tank levels ---
+# ---------------------------------------------------------------------------
+# DOSING TANK LEVELS
+#
+# Each of the four 1-gallon dosing tanks has an optical level sensor that
+# trips when the tank is almost empty: four digital inputs on module
+# E831CDC7E680. farmhand shows them on its Environmental card as "ok" or low.
+#
+# Owner tests, 2026-10-29 (tools/farmhand/dosing_levels.py):
+#   - 0 = ok. Low is ASSUMED to be 1 (dosing_level_low_value) - no real low
+#     tank had been seen yet; the first one confirms it.
+#   - Corroded connectors make an input flicker, so a single raw 1 never
+#     means low: a full rolling window decides, and frequent flicker raises
+#     Sensor Fault instead.
+#   - A dead or unplugged sensor reads a steady 0 - ok, exactly like a full
+#     tank, in farmhand too. Only the silent-sensor backstop catches it.
+#
+# Every state publishes on change only, retained, so the frame rate never
+# reaches the recorder. Unique IDs and topics follow the tank's SLOT (1-4),
+# never its configurable name, so a renamed tank keeps its entities.
+#
+# Alerts are decided here, with their repeat timers kept in a retained memory
+# topic per tank so a restart neither repeats nor forgets one. Each goes to
+# DOSING_ALERT_TOPIC; automation 23 hands it to script.farm_alerts.
+# ---------------------------------------------------------------------------
+
+DOSING_DEVICE_ID = "E831CDC7E680"
+DOSING_DEFAULT_NAMES = ("Nutrient A", "Nutrient B", "pH Down", "Boost / pH Up")
+DOSING_DEFAULT_INPUTS = ("digital_1", "digital_2", "digital_3", "digital_4")
+
+DOSING_LOW_ON_PERCENT = 80        # this much of a full window low -> Low
+DOSING_LOW_OFF_PERCENT = 20       # this much or less -> ok; in between holds
+DOSING_PERCENT_STEP = 10          # low_percent republished on a move this big
+DOSING_FAULT_WINDOW_SECONDS = 3600
+DOSING_FAULT_CLEAR_CHANGES = 5    # an hour this quiet clears Sensor Fault
+DOSING_STALE_SECONDS = 60         # no reading this long -> unavailable
+DOSING_CHECK_SECONDS = 2          # how often watch_dosing_tanks looks
+DOSING_DAYS_CHECK_SECONDS = 3600  # Days Since Refill recomputed this often
+# After a restart, wait this long after subscribing for the broker's retained
+# memory before deciding there was none.
+DOSING_RESTORE_WAIT_SECONDS = 3
+DOSING_LOW_REPEAT_SECONDS = 12 * 3600
+DOSING_FAULT_REPEAT_SECONDS = 24 * 3600
+DOSING_BACKSTOP_REPEAT_SECONDS = 7 * 86400
+
+# Never retained: an alert must not replay when Home Assistant reconnects.
+DOSING_ALERT_TOPIC = f"{MQTT_BASE_TOPIC}/dosing_tanks/alert"
+_DOSING_MEMORY_TIMES = ("last_refill", "last_low", "low_alert", "fault_alert",
+                        "backstop_alert")
+
+# Logged at start - logging is not set up yet while this module loads.
+_DOSING_CONFIG_PROBLEMS = []
+
+
+def _dosing_topic(slot: int, what: str) -> str:
+    return f"{MQTT_BASE_TOPIC}/dosing_tank_{slot}_{what}"
+
+
+def _dosing_available_topic(slot: int) -> str:
+    return f"{MQTT_BASE_TOPIC}/dosing_tank_{slot}/available"
+
+
+def _dosing_memory_topic(slot: int) -> str:
+    return f"{MQTT_BASE_TOPIC}/dosing_tank_{slot}/memory"
+
+
+def _dosing_env_list(var, defaults, parse):
+    """A per-tank option: a JSON list (run.sh sends one) or comma-separated.
+    An entry that is missing or unusable falls back to that tank's default."""
+    raw = (os.environ.get(var) or "").strip()
+    if raw in ("", "null"):
+        return list(defaults)
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError:
+        items = [s.strip() for s in raw.split(",")]
+    if not isinstance(items, list):
+        items = [items]
+    if len(items) != len(defaults):
+        _DOSING_CONFIG_PROBLEMS.append(
+            f"{var} has {len(items)} entries, expected {len(defaults)} - "
+            f"a missing one takes its default")
+    values = []
+    for i, default in enumerate(defaults):
+        try:
+            values.append(parse(items[i]) if i < len(items) else default)
+        except (TypeError, ValueError):
+            _DOSING_CONFIG_PROBLEMS.append(
+                f"{var} entry {i + 1} ({items[i]!r}) is not usable - using {default!r}")
+            values.append(default)
+    return values
+
+
+def _dosing_env_int(var, default, lo, hi):
+    raw = (os.environ.get(var) or "").strip()
+    if raw in ("", "null"):
+        return default
+    try:
+        value = int(raw)
+        if lo <= value <= hi:
+            return value
+    except ValueError:
+        pass
+    _DOSING_CONFIG_PROBLEMS.append(f"{var}={raw!r} is not {lo}-{hi} - using {default}")
+    return default
+
+
+def _tank_name(value) -> str:
+    name = str(value).strip()
+    if not farm_slug(name):       # HA could build no entity ID from it
+        raise ValueError(name)
+    return name
+
+
+def _tank_input(value) -> str:
+    key = str(value).strip()
+    if not re.fullmatch(r"digital_[0-9]+", key):
+        raise ValueError(key)
+    return key
+
+
+def _tank_enabled(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("true", "1", "yes", "on"):
+        return True
+    if text in ("false", "0", "no", "off"):
+        return False
+    raise ValueError(value)
+
+
+def _local_time(ts):
+    return None if ts is None else time.strftime("%Y-%m-%d %H:%M %z", time.localtime(ts))
+
+
+def _due(last, wall: float, every: float) -> bool:
+    return last is None or wall - last >= every
+
+
+@dataclass
+class _DosingTank:
+    slot: int                     # 1-4: decides unique_ids and topics
+    name: str
+    input_key: str
+    samples: deque = field(default_factory=deque)   # (monotonic, low) in the window
+    lows: int = 0                 # low samples in `samples`
+    sampling_from: float = None   # first reading since start or since unavailable
+    seen_at: float = None         # monotonic time of the latest reading
+    last_raw: int = None
+    changes: deque = field(default_factory=deque)   # monotonic times of raw changes
+    low: bool = False             # debounced; starts ok
+    fault: bool = False
+    fault_since: float = None
+    available: bool = None        # last availability published, this run
+    pub_low: bool = None          # last value published, this run - None: not yet
+    pub_fault: bool = None
+    pub_percent: int = None
+    pub_days: int = None
+    pub_days_attrs: dict = None
+    days_checked_at: float = None
+    memory: dict = None           # wall-clock times, kept in the retained memory topic
+
+
+class DosingMonitor:
+    """Debounce, Sensor Fault, availability, backstop and alerts for the tanks.
+
+    Frames and tick() run on the asyncio thread; Refilled presses and the
+    retained memory arrive on paho's thread, so one lock guards it all.
+    `now` is time.monotonic() and `wall` time.time(); tests pass their own.
+    """
+
+    def __init__(self, names, inputs, enabled, low_value=1, window_s=600,
+                 fault_changes=20, silent_days=21, farm_name=FARM_NAME):
+        self.slots = range(1, len(names) + 1)
+        self.tanks = [_DosingTank(slot, name, key) for slot, (name, key, on)
+                      in enumerate(zip(names, inputs, enabled), 1) if on]
+        self.low_value = low_value
+        self.window_s = window_s
+        self.fault_changes = fault_changes
+        self.silent_days = silent_days
+        self.farm_name = farm_name
+        self._lock = threading.Lock()
+        self._started = None
+        self._read_until = None
+        self._memory_seen = set()
+
+    def _tank(self, slot):
+        return next((t for t in self.tanks if t.slot == slot), None)
+
+    def log_config(self):
+        for problem in _DOSING_CONFIG_PROBLEMS:
+            log.warning("Dosing tank option: %s", problem)
+        keys = [t.input_key for t in self.tanks]
+        for key in sorted({k for k in keys if keys.count(k) > 1}):
+            log.warning("Dosing tank option: %s is read by more than one tank", key)
+        if not self.tanks:
+            log.info("Dosing tank levels: every tank disabled")
+            return
+        log.info("Dosing tanks: %s. Low = %d, window %d s, Sensor Fault above %d "
+                 "changes/h, backstop after %d days",
+                 ", ".join(f"{t.name} <- {t.input_key}" for t in self.tanks),
+                 self.low_value, self.window_s, self.fault_changes, self.silent_days)
+
+    # --- MQTT wiring ---------------------------------------------------------
+
+    def refilled_topics(self) -> dict:
+        return {f"{_dosing_topic(t.slot, 'refilled')}/set": t.slot for t in self.tanks}
+
+    def memory_topics(self) -> dict:
+        return {_dosing_memory_topic(t.slot): t.slot for t in self.tanks}
+
+    def publish_discovery(self, client, availability_topic: str):
+        """An empty config for a disabled tank removes its entities from HA."""
+        for slot in self.slots:
+            t = self._tank(slot)
+            for component, what, config in self._discovery(slot, t, availability_topic):
+                client.publish(f"{DISCOVERY_PREFIX}/{component}/dosing_tank_{slot}_{what}/config",
+                               json.dumps(config) if t else "", qos=1, retain=True)
+            if t:
+                log.info("Published discovery config for %s tank (%s)", t.name, t.input_key)
+
+    def _discovery(self, slot, t, availability_topic):
+        name = t.name if t else ""
+        level = _dosing_topic(slot, "level")
+        fault = _dosing_topic(slot, "sensor_fault")
+        days = _dosing_topic(slot, "days_since_refill")
+        # Level and Fault describe the sensor: unavailable without its data.
+        # Days Since Refill and Refilled are the bridge's own clock.
+        sensor_available = {
+            "availability": [{"topic": availability_topic},
+                             {"topic": _dosing_available_topic(slot)}],
+            "availability_mode": "all",
+        }
+        return [
+            ("binary_sensor", "level", {
+                "name": f"{name} Level",
+                "unique_id": f"greenery_s_dosing_tank_{slot}_level",
+                "state_topic": f"{level}/state",
+                "json_attributes_topic": f"{level}/attributes",
+                "payload_on": "ON", "payload_off": "OFF",
+                "device_class": "problem", "icon": "mdi:cup-water",
+                **sensor_available, "device": DEVICE_INFO}),
+            ("binary_sensor", "sensor_fault", {
+                "name": f"{name} Sensor Fault",
+                "unique_id": f"greenery_s_dosing_tank_{slot}_sensor_fault",
+                "state_topic": f"{fault}/state",
+                "payload_on": "ON", "payload_off": "OFF",
+                "device_class": "problem", "entity_category": "diagnostic",
+                **sensor_available, "device": DEVICE_INFO}),
+            ("sensor", "days_since_refill", {
+                "name": f"{name} Days Since Refill",
+                "unique_id": f"greenery_s_dosing_tank_{slot}_days_since_refill",
+                "state_topic": f"{days}/state",
+                "json_attributes_topic": f"{days}/attributes",
+                "unit_of_measurement": "d", "device_class": "duration",
+                "icon": "mdi:calendar-clock",
+                "availability_topic": availability_topic, "device": DEVICE_INFO}),
+            ("button", "refilled", {
+                "name": f"{name} Refilled",
+                "unique_id": f"greenery_s_dosing_tank_{slot}_refilled",
+                "command_topic": f"{_dosing_topic(slot, 'refilled')}/set",
+                "payload_press": "PRESS", "icon": "mdi:water-plus",
+                "availability_topic": availability_topic, "device": DEVICE_INFO}),
+        ]
+
+    def subscribe(self, client, now=None):
+        """On every MQTT (re)connect: the Refilled buttons, and each tank's
+        memory as the broker kept it from before a restart."""
+        for topic in [*self.refilled_topics(), *self.memory_topics()]:
+            client.subscribe(topic, qos=1)
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            if self._read_until is None:
+                self._read_until = now + DOSING_RESTORE_WAIT_SECONDS
+
+    def memory_retained(self, slot: int, payload):
+        """The broker's retained memory for one tank. Only the first counts:
+        later deliveries are the bridge's own."""
+        try:
+            stored = json.loads(payload)
+            mem = {k: stored.get(k) for k in _DOSING_MEMORY_TIMES}
+            if not all(v is None or (isinstance(v, (int, float)) and not isinstance(v, bool))
+                       for v in mem.values()) or mem["last_refill"] is None:
+                raise ValueError("bad times")
+            mem["refill_how"] = str(stored.get("refill_how") or "unknown")[:60]
+        except (ValueError, TypeError, AttributeError):
+            log.warning("Dosing tank %d: retained memory unreadable - its clocks restart", slot)
+            return
+        with self._lock:
+            t = self._tank(slot)
+            if slot in self._memory_seen or t is None:
+                return
+            self._memory_seen.add(slot)
+            t.memory = mem
+
+    def _memory(self, t, wall: float) -> dict:
+        if t.memory is None:
+            # First start, or no memory on the broker: the clocks start now.
+            t.memory = {k: None for k in _DOSING_MEMORY_TIMES}
+            t.memory.update(last_refill=wall, refill_how="first start")
+            self._memory_seen.add(t.slot)
+        return t.memory
+
+    def _save(self, client, t):
+        client.publish(_dosing_memory_topic(t.slot), json.dumps(t.memory), qos=1, retain=True)
+
+    # --- Readings --------------------------------------------------------------
+
+    def on_frame(self, client, payload, now=None, wall=None):
+        """Every /farm-data frame: one reading per enabled tank."""
+        now = time.monotonic() if now is None else now
+        wall = time.time() if wall is None else wall
+        try:
+            dev = payload["state"][DOSING_DEVICE_ID]
+            inputs = dev["state"] if dev.get("connected") is not False else {}
+        except (KeyError, TypeError, AttributeError):
+            inputs = {}
+        with self._lock:
+            if self._started is None:
+                self._started = now
+            for t in self.tanks:
+                raw = inputs.get(t.input_key) if isinstance(inputs, dict) else None
+                # Missing is not a reading: tick() greys the tank out once
+                # none has arrived for DOSING_STALE_SECONDS.
+                if isinstance(raw, (int, float)) and math.isfinite(raw):
+                    self._reading(client, t, int(round(raw)), now, wall)
+
+    def _reading(self, client, t, raw: int, now: float, wall: float):
+        if t.seen_at is None or now - t.seen_at > DOSING_STALE_SECONDS:
+            # First reading since start, or back from unavailable: a new window.
+            # A routine reconnect gap is far shorter and keeps the window.
+            t.samples.clear()
+            t.lows, t.sampling_from, t.last_raw = 0, now, None
+        t.seen_at = now
+        if t.available is not True:
+            if t.available is False:
+                log.info("%s tank level: readings back", t.name)
+            t.available = True
+            client.publish(_dosing_available_topic(t.slot), "online", qos=1, retain=True)
+
+        low = raw == self.low_value
+        if t.last_raw is not None and raw != t.last_raw:
+            t.changes.append(now)
+        t.last_raw = raw
+        t.samples.append((now, low))
+        t.lows += low
+        while t.samples[0][0] <= now - self.window_s:
+            t.lows -= t.samples.popleft()[1]
+
+        self._update_fault(client, t, now)
+        # Never decided from a partial window.
+        if now - t.sampling_from >= self.window_s:
+            self._update_level(client, t, round(100 * t.lows / len(t.samples)), wall)
+
+    def _update_fault(self, client, t, now: float):
+        while t.changes and t.changes[0] <= now - DOSING_FAULT_WINDOW_SECONDS:
+            t.changes.popleft()
+        n = len(t.changes)
+        observed = now - t.sampling_from >= DOSING_FAULT_WINDOW_SECONDS
+        if not t.fault and n > self.fault_changes:
+            t.fault, t.fault_since = True, now
+            log.warning("%s tank sensor unstable: %d changes in the last hour - "
+                        "Sensor Fault on, level held", t.name, n)
+        elif (t.fault and n <= DOSING_FAULT_CLEAR_CHANGES and observed
+              and now - t.fault_since >= DOSING_FAULT_WINDOW_SECONDS):
+            t.fault = False
+            log.info("%s tank sensor steady again (%d changes in the last hour) - "
+                     "Sensor Fault off", t.name, n)
+        # Off is only known after a full hour of readings; on, at once.
+        if (t.fault or observed) and t.pub_fault != t.fault:
+            t.pub_fault = t.fault
+            client.publish(f"{_dosing_topic(t.slot, 'sensor_fault')}/state",
+                           "ON" if t.fault else "OFF", qos=1, retain=True)
+
+    def _update_level(self, client, t, percent: int, wall: float):
+        level = _dosing_topic(t.slot, "level")
+        if t.pub_percent is None or abs(percent - t.pub_percent) >= DOSING_PERCENT_STEP:
+            t.pub_percent = percent
+            client.publish(f"{level}/attributes", json.dumps({"low_percent": percent}),
+                           qos=1, retain=True)
+        if t.fault:
+            return        # a flickering sensor proves nothing: hold, no low alert
+
+        low = (True if percent >= DOSING_LOW_ON_PERCENT
+               else False if percent <= DOSING_LOW_OFF_PERCENT else t.low)
+        changed = False
+        if low != t.low:
+            t.low = low
+            mem = self._memory(t, wall)
+            if low:
+                mem["last_low"] = wall
+                log.warning("%s tank LOW (%d%% of the last %d s)", t.name, percent, self.window_s)
+            else:
+                mem["last_refill"], mem["refill_how"] = wall, "sensor: low, then ok"
+                log.info("%s tank ok again - refilled (%d%% low)", t.name, percent)
+            changed = True
+        if percent <= DOSING_LOW_OFF_PERCENT and t.memory and t.memory["low_alert"] is not None:
+            t.memory["low_alert"] = None     # decisively ok: the next Low alerts at once
+            changed = True
+        if changed:
+            self._save(client, t)
+            self._publish_days(client, t, wall)
+        if t.pub_low != t.low:
+            t.pub_low = t.low
+            client.publish(f"{level}/state", "ON" if t.low else "OFF", qos=1, retain=True)
+
+    # --- Refilled, Days Since Refill, alerts -----------------------------------
+
+    def refilled(self, client, slot: int, wall=None):
+        """A Refilled press restarts the tank's refill and backstop clocks."""
+        wall = time.time() if wall is None else wall
+        with self._lock:
+            t = self._tank(slot)
+            if t is None:
+                return
+            mem = self._memory(t, wall)
+            mem["last_refill"], mem["refill_how"] = wall, "Refilled button"
+            self._save(client, t)
+            self._publish_days(client, t, wall)
+        log.info("%s tank: Refilled pressed - Days Since Refill reset", t.name)
+
+    def _publish_days(self, client, t, wall: float):
+        mem = t.memory
+        days = int(max(0.0, wall - mem["last_refill"]) // 86400)
+        attrs = {"last_refill": _local_time(mem["last_refill"]),
+                 "refilled_by": mem["refill_how"],
+                 "last_reported_low": _local_time(mem["last_low"])}
+        base = _dosing_topic(t.slot, "days_since_refill")
+        if attrs != t.pub_days_attrs:
+            t.pub_days_attrs = attrs
+            client.publish(f"{base}/attributes", json.dumps(attrs), qos=1, retain=True)
+        if days != t.pub_days:
+            t.pub_days = days
+            client.publish(f"{base}/state", days, qos=1, retain=True)
+
+    def tick(self, client, now=None, wall=None):
+        """Every DOSING_CHECK_SECONDS, frames or not: availability, memory,
+        alert repeats and Days Since Refill."""
+        now = time.monotonic() if now is None else now
+        wall = time.time() if wall is None else wall
+        with self._lock:
+            if self._started is None:
+                self._started = now
+            restored = self._read_until is not None and now >= self._read_until
+            for t in self.tanks:
+                last = t.seen_at if t.seen_at is not None else self._started
+                if t.available is not False and now - last > DOSING_STALE_SECONDS:
+                    t.available = False
+                    log.warning("%s tank level: no %s reading from module %s for %ss - "
+                                "unavailable", t.name, t.input_key, DOSING_DEVICE_ID,
+                                DOSING_STALE_SECONDS)
+                    client.publish(_dosing_available_topic(t.slot), "offline",
+                                   qos=1, retain=True)
+                if not restored:
+                    continue      # still waiting to learn this tank's clocks
+                if t.memory is None:
+                    self._memory(t, wall)
+                    self._save(client, t)
+                if t.days_checked_at is None or now - t.days_checked_at >= DOSING_DAYS_CHECK_SECONDS:
+                    t.days_checked_at = now
+                    self._publish_days(client, t, wall)
+                if t.available:       # no alert for unavailable
+                    self._alerts(client, t, wall)
+
+    def _alerts(self, client, t, wall: float):
+        mem = t.memory
+        sent = False
+        if t.low and not t.fault and _due(mem["low_alert"], wall, DOSING_LOW_REPEAT_SECONDS):
+            self._alert(client, t, "low", "⚠️ Dosing Tank Low",
+                        f"{t.name} tank low. Refill it.", "normal")
+            mem["low_alert"], sent = wall, True
+        if t.fault and _due(mem["fault_alert"], wall, DOSING_FAULT_REPEAT_SECONDS):
+            self._alert(client, t, "sensor_fault", "⚠️ Dosing Tank Sensor Unstable",
+                        f"{t.name} tank sensor unstable. Check its connector.", "normal")
+            mem["fault_alert"], sent = wall, True
+        # A dead sensor reads ok forever. Low, a detected refill or a Refilled
+        # press each prove the sensor and restart this clock.
+        last_event = max(mem["last_refill"], mem["last_low"] or 0)
+        silent = wall - last_event
+        backstop = mem["backstop_alert"]
+        if (not t.low and not t.fault and silent >= self.silent_days * 86400
+                and (backstop is None or backstop < last_event
+                     or wall - backstop >= DOSING_BACKSTOP_REPEAT_SECONDS)):
+            self._alert(client, t, "silent", "ℹ️ Dosing Tank Sensor Silent",
+                        f"{t.name} hasn't reported low in {int(silent // 86400)} days. "
+                        f"Check the sensor and its connector, and press {t.name} "
+                        f"Refilled after each refill.", "low")
+            mem["backstop_alert"], sent = wall, True
+        if sent:
+            self._save(client, t)
+
+    def _alert(self, client, t, kind: str, title: str, text: str, priority: str):
+        # Sent once. While the broker is unreachable paho queues a QoS 1
+        # message and delivers it on reconnect, so a retry here would page twice.
+        message = f"{self.farm_name}: {text}"
+        client.publish(DOSING_ALERT_TOPIC, json.dumps({
+            "title": title, "message": message, "priority": priority,
+            "notification_id": f"farm_dosing_tank_{t.slot}_{kind}",
+            "tank": t.name, "kind": kind,
+        }), qos=1, retain=False)
+        log.info("Dosing alert: %s", message)
+
+
+DOSING = DosingMonitor(
+    names=_dosing_env_list("FARM_DOSING_TANK_NAMES", DOSING_DEFAULT_NAMES, _tank_name),
+    inputs=_dosing_env_list("FARM_DOSING_TANK_INPUTS", DOSING_DEFAULT_INPUTS, _tank_input),
+    enabled=_dosing_env_list("FARM_DOSING_TANKS_ENABLED", (True,) * 4, _tank_enabled),
+    low_value=_dosing_env_int("FARM_DOSING_LEVEL_LOW_VALUE", 1, 0, 1),
+    window_s=_dosing_env_int("FARM_DOSING_LEVEL_WINDOW_S", 600, 60, 3600),
+    fault_changes=_dosing_env_int("FARM_DOSING_SENSOR_FAULT_CHANGES_PER_HOUR", 20, 1, 3600),
+    silent_days=_dosing_env_int("FARM_DOSING_SILENT_DAYS", 21, 1, 365),
+)
+
+
+async def watch_dosing_tanks(client):
+    """The time-driven half: runs with or without frames. Same rule as
+    watch_board_data - a routine /farm-data reconnect (every ~60 s, a few
+    seconds' gap) changes nothing; DOSING_STALE_SECONDS without a reading does."""
+    while True:
+        await asyncio.sleep(DOSING_CHECK_SECONDS)
+        try:
+            DOSING.tick(client)
+        except Exception:
+            log.exception("Dosing tank check failed")
+# --- END dosing tank levels ---
+
 
 
 
@@ -1085,6 +1614,8 @@ def build_mqtt_client() -> mqtt.Client:
         f"{MQTT_BASE_TOPIC}/start_cool_down/set": (handle_start_cool_down,),
         f"{MQTT_BASE_TOPIC}/end_cool_down/set": (handle_end_cool_down,),
     }
+    dosing_refilled_topics = DOSING.refilled_topics()
+    dosing_memory_topics = DOSING.memory_topics()
 
     def on_connect(c, userdata, flags, rc):
         msg = CONNACK_CODES.get(rc, f"Unknown return code {rc}")
@@ -1097,6 +1628,8 @@ def build_mqtt_client() -> mqtt.Client:
             # the bridge last stopped. See cool_down_on_frame.
             c.subscribe(COOL_DOWN_ACTIVE_TOPIC, qos=1)
             cool_down_subscribed()
+            # Refilled buttons, and each tank's retained memory read back.
+            DOSING.subscribe(c)
         else:
             log.error(f"MQTT connection FAILED: {msg}")
 
@@ -1113,6 +1646,10 @@ def build_mqtt_client() -> mqtt.Client:
             if msg.retain:
                 cool_down_retained(msg.payload == b"ON")
             return
+        if topic in dosing_memory_topics:
+            if msg.retain:
+                DOSING.memory_retained(dosing_memory_topics[topic], msg.payload)
+            return
         # The broker replays a retained message on every (re)subscribe - i.e.
         # every bridge restart and reconnect. A command must never replay, so
         # drop it and clear it off the broker.
@@ -1126,7 +1663,10 @@ def build_mqtt_client() -> mqtt.Client:
         if not msg.payload:
             return
         log.info("MQTT command received on %s", topic)
-        if topic in button_handlers:
+        if topic in dosing_refilled_topics:
+            # Local bookkeeping only - nothing goes to the farm.
+            DOSING.refilled(c, dosing_refilled_topics[topic])
+        elif topic in button_handlers:
             handler, *args = button_handlers[topic]
             run_farm_command(handler, c, *args)
         elif topic in output_set_topics or topic in fh24_set_topics:
@@ -1201,6 +1741,7 @@ def publish_discovery(client: mqtt.Client):
     publish_switch_discovery(client, availability_topic)
     publish_module_discovery(client, availability_topic)
     publish_farmhand_discovery(client, availability_topic)
+    DOSING.publish_discovery(client, availability_topic)
 
 
 def extract_value(payload: dict, sensor: SensorDef):
@@ -1225,6 +1766,11 @@ def publish_states(client: mqtt.Client, payload: dict):
 
     publish_binary_states(client, payload)
     publish_module_states(client, payload)
+    try:
+        DOSING.on_frame(client, payload)
+    except Exception:
+        # Never let the tank levels stop the farm's other sensors.
+        log.exception("Dosing tank levels: frame not processed")
 
 # ---------------------------------------------------------------------------
 # SSE stream reader
@@ -1642,6 +2188,7 @@ def log_farm_identity():
 
 async def run_forever():
     log_farm_identity()
+    DOSING.log_config()
     mqtt_client = None
 
     # Retry MQTT setup itself - a transient network blip or the broker not
@@ -1657,7 +2204,8 @@ async def run_forever():
     # Held in a variable: asyncio keeps only a weak reference to a task.
     background_tasks = [asyncio.create_task(run_farm_monitoring(mqtt_client)),
                         asyncio.create_task(poll_farmhand(mqtt_client)),
-                        asyncio.create_task(watch_board_data(mqtt_client))]
+                        asyncio.create_task(watch_board_data(mqtt_client)),
+                        asyncio.create_task(watch_dosing_tanks(mqtt_client))]
 
     while True:
         try:

@@ -1,0 +1,41 @@
+alias: Farm Dosing Tank Alert
+description: >-
+  Delivers the bridge's dosing tank alerts. The bridge decides WHEN to alert,
+  so this only passes each one to the notification script:
+
+    Tank Low            "<Farm>: Nutrient A tank low. Refill it."
+                        again every 12 h while it stays low
+    Sensor Unstable     "<Farm>: Nutrient B tank sensor unstable. Check its
+                        connector." - at most every 24 h
+    Sensor Silent       no Low and no Refilled press in 21 days - weekly until
+                        reset. A dead or unplugged level sensor reads ok, like a
+                        full tank, so this is the only way to catch one.
+
+  The bridge keeps those timers itself (retained on the broker), so a bridge or
+  Home Assistant restart neither repeats an alert nor forgets one, and the
+  tank names come from the app's options - nothing here names an entity.
+
+  None is critical: a dosing tank running dry slows the dosing correction, it
+  does not stop the farm. No alert for a tank going unavailable.
+
+  MQTT topic farm/dosing_tanks/alert, never retained. If Home Assistant is down
+  when one is sent it is lost; the 12 h / 24 h / weekly repeat sends it again.
+triggers:
+  - topic: farm/dosing_tanks/alert
+    trigger: mqtt
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.payload_json is defined
+         and trigger.payload_json.message is defined }}
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: "{{ trigger.payload_json.title | default('⚠️ Dosing Tank') }}"
+      notification_id: >-
+        {{ trigger.payload_json.notification_id | default('farm_dosing_tank') }}
+      message: "{{ trigger.payload_json.message }}"
+# Several tanks can alert in the same second; each is delivered.
+mode: queued
+max: 10
