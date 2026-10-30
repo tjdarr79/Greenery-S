@@ -168,7 +168,9 @@ MARKERS = {
         ('"greenery_s_duplicate_bridge_detected"', "Duplicate Bridge Detected sensor"),
         ("DUPLICATE.connected(c)", "every connect announced on farm/bridge/instance"),
         ("DUPLICATE.instance_message(c, msg.payload)", "another bridge's announcement read"),
-        ("DUPLICATE.status_message(c, msg.payload)", "a stray offline set back to online"),
+        ("DUPLICATE.status_message(c, msg.payload, msg.retain)", "a stray offline set back to online"),
+        ('self._signal(client, "foreign_online", now)', "a bridge older than 1.5.1 seen connecting"),
+        ("self.echoes += 1", "our own online told apart by count, not by time"),
         ("DUPLICATE.disconnected(c, rc)", "disconnect bursts counted"),
         ("asyncio.create_task(watch_duplicate_bridge(", "the 10-minute clear runs"),
     ],
@@ -687,7 +689,7 @@ def main():
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 2810, f"farm_bridge.py is {n} lines (expect ~2846)",
+        check(n >= 2865, f"farm_bridge.py is {n} lines (expect ~2903)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():

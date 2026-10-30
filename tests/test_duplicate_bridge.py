@@ -28,8 +28,8 @@ def mon():
     return fb.DuplicateBridgeMonitor(OURS, "homeassistant", "1.5.1", 1761800000)
 
 
-def connect(mon, mqtt):
-    mon.connected(mqtt)
+def connect(mon, mqtt, now=T0 - 100):
+    mon.connected(mqtt, now=now)
     mqtt.published.clear()
 
 
@@ -184,10 +184,68 @@ def test_foreign_offline_sets_online_at_once_and_turns_it_on(mon, mqtt):
     assert attrs(mqtt)["reason"] == "foreign_offline"
 
 
-def test_online_is_ignored(mon, mqtt):
+def test_own_online_is_not_another_bridge(mon, mqtt):
+    connect(mon, mqtt, now=T0)
+    mon.status_message(mqtt, b"online", retain=True, now=T0 + 50)   # replay on subscribe
+    mon.status_message(mqtt, b"online", now=T0 + 1)                 # paho's resend on reconnect
+    mon.status_message(mqtt, b"offline", now=T0 + 100)              # a Last Will...
+    mon.status_message(mqtt, b"online", now=T0 + 100.05)            # ...our answer's echo
+    mon.tick(mqtt, now=T0 + 130)
+    assert mon.reason == "foreign_offline"
+    assert mqtt.payloads("farm/bridge/status") == ["online"]       # no answer to an online
+
+
+def test_an_old_bridge_starting_just_after_our_answer_is_seen(mon, mqtt):
+    """Caught end to end: a 1.5.0 bridge connected 2.3 s after this bridge
+    answered a Last Will, and a time window took its online for our echo."""
     connect(mon, mqtt)
-    mon.status_message(mqtt, b"online", now=T0)
-    assert not mon.on and mqtt.published == []
+    mon.status_message(mqtt, b"offline", now=T0)
+    mon.status_message(mqtt, b"online", now=T0 + 0.01)             # our echo
+    mon.status_message(mqtt, b"online", now=T0 + 2.3)              # the 1.5.0 bridge
+    mon.tick(mqtt, now=T0 + 15)
+    assert mon.reason == "foreign_online"
+
+
+def test_unannounced_bridge_is_not_given_an_earlier_bridges_host(mon, mqtt):
+    connect(mon, mqtt)
+    mon.instance_message(mqtt, instance("pc-bridge", host="HYDRO"), now=T0)
+    mon.status_message(mqtt, b"online", now=T0 + 120)             # a 1.5.0 bridge, later
+    mon.tick(mqtt, now=T0 + 135)
+    assert attrs(mqtt) == {"other_id": None, "other_host": None, "other_version": None,
+                           "reason": "foreign_online"}
+
+
+# --- 2d. a bridge that never announces itself (before 1.5.1) ---------------------------
+
+def test_unannounced_bridge_turns_it_on_until_it_stops(mon, mqtt, caplog):
+    connect(mon, mqtt)
+    mon.status_message(mqtt, b"online", now=T0)        # the old bridge connects
+    mon.tick(mqtt, now=T0 + 9)
+    assert not mon.on                                  # a 1.5.1 bridge would announce first
+    mon.tick(mqtt, now=T0 + 10)
+    assert state(mqtt) == "ON"
+    assert attrs(mqtt) == {"other_id": None, "other_host": None, "other_version": None,
+                           "reason": "foreign_online"}
+    assert "never announced itself" in caplog.text
+    mon.tick(mqtt, now=T0 + 6 * 3600)                  # it shows nothing else while it runs
+    assert mon.on
+    mon.status_message(mqtt, b"offline", now=T0 + 7 * 3600)   # its Last Will
+    assert attrs(mqtt)["reason"] == "foreign_offline"
+    mon.tick(mqtt, now=T0 + 7 * 3600 + 599)
+    assert mon.on
+    mon.tick(mqtt, now=T0 + 7 * 3600 + 600)
+    assert not mon.on
+    assert turned_on(mqtt) == 1
+
+
+def test_announced_bridge_online_is_not_unannounced(mon, mqtt):
+    connect(mon, mqtt)
+    mon.status_message(mqtt, b"online", now=T0)        # a 1.5.1 bridge: online...
+    mon.instance_message(mqtt, instance("new-bridge"), now=T0 + 0.01)   # ...then its announcement
+    mon.tick(mqtt, now=T0 + 20)
+    assert attrs(mqtt)["reason"] == "instance"
+    mon.tick(mqtt, now=T0 + 601)
+    assert not mon.on                                  # not held: it announces while it runs
 
 
 def test_offline_after_an_announcement_keeps_the_other_host(mon, mqtt):

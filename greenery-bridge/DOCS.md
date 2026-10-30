@@ -496,8 +496,9 @@ Confirm it, any one of:
   names the computer the other bridge runs on (blank if it never said),
   `reason` is `instance` (the other bridge announced itself),
   `foreign_offline` (the other bridge stopped and its Last Will set the farm
-  offline — the app sets it straight back online) or `disconnects` (over 5
-  unexpected disconnects in 60 s). When one of the two bridges is this app,
+  offline — the app sets it straight back online), `foreign_online` (a bridge
+  older than 1.5.1 connected: it set the farm online and never announced
+  itself) or `disconnects` (over 5 unexpected disconnects in 60 s). When one of the two bridges is this app,
   only the app writes the sensor, so `other_host` is the other computer. The
   automation `25-duplicate-bridge` sends a critical alert when it turns on.
 - The **Database health check** below shows thousands of rows an hour for
@@ -508,13 +509,17 @@ Fix: stop the other bridge. On a Windows PC, double-click
 (it lists what it removed), then check **Task Scheduler → Task Scheduler
 Library** for any task that still starts `farm_bridge.py` — `Greenery S Farm
 Bridge` or `FarmBridge`. On Linux: `sudo systemctl disable --now farm-bridge`.
-The sensor clears 10 minutes after the last sign of the other bridge.
+The sensor clears 10 minutes after the last sign of the other bridge; after
+`foreign_online`, 10 minutes after that bridge stops.
 
 Since 1.5.1 each bridge connects with its own client ID
 (`greenery-bridge-<farm>-<random>`, in the Log), so two bridges no longer kick
 each other off. Run together they are still a fault: every button and switch
 press from Home Assistant reaches the farm twice. A bridge older than 1.5.1
-never announces itself, so this app sees it only when it stops (`foreign_offline`).
+never announces itself: this app sees it about 15 s after it connects
+(`foreign_online`) and holds the sensor on until it stops. It cannot see one
+that was already connected when this app started, nor one that reconnects in
+the same few seconds as this app after a broker restart.
 
 **"No MQTT broker found"** — install and *start* the Mosquitto broker add-on.
 Installing without starting is the usual cause.

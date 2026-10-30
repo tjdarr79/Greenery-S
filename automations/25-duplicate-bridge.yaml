@@ -6,8 +6,10 @@ description: >-
   each other off about once a second: every entity flapped unavailable and the
   database grew by ~10 million rows a day. The bridge turns Duplicate Bridge
   Detected on when another bridge announces itself, when another bridge's Last
-  Will sets the farm offline, or after more than 5 unexpected disconnects in
-  60 s. It clears after 10 quiet minutes.
+  Will sets the farm offline, when a bridge older than 1.5.1 connects (it never
+  announces itself, so no host is named), or after more than 5 unexpected
+  disconnects in 60 s. It clears after 10 quiet minutes - after an older
+  bridge, once it has stopped.
 
   Critical: the database can fill Home Assistant's disk within days.
 

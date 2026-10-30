@@ -18,11 +18,13 @@ Assistant slowed down (Cool-Down with it).
 - **Duplicate Bridge Detected** (diagnostic, problem), on when another bridge
   announces itself on `farm/bridge/instance`, when another bridge's Last Will
   sets the farm offline while this one is connected (the app sets it straight
-  back online, so entities do not stay unavailable), or after more than 5
-  unexpected disconnects in 60 s. Attributes `other_id`, `other_host`,
+  back online, so entities do not stay unavailable), when a bridge older than
+  1.5.1 connects (it sets the farm online and never announces itself; the
+  sensor then stays on until it stops), or after more than 5 unexpected
+  disconnects in 60 s. Attributes `other_id`, `other_host`,
   `other_version`, `reason`. Clears after 10 quiet minutes. When one of the two
   is the app, only the app writes it, so `other_host` names the other computer.
-  Every bridge from 1.5.1 announces itself; an older one is seen when it stops.
+  Every bridge from 1.5.1 announces itself.
 - New automation `25-duplicate-bridge`: a **critical** alert naming the other
   computer. Paste it.
 - Legacy Windows installer: a warning not to run it alongside the app, and

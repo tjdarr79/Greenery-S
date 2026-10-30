@@ -1596,8 +1596,12 @@ async def watch_dosing_tanks(client):
 #   instance         another bridge's announcement on farm/bridge/instance
 #   foreign_offline  farm/bridge/status = offline while this bridge is
 #                    connected: another client's Last Will - a bridge stopped
+#   foreign_online   farm/bridge/status set online by another client that does
+#                    not announce itself: a bridge older than 1.5.1 connected
 #   disconnects      over 5 unexpected disconnects in 60 s
-# It clears after 10 minutes with none of them and at most 1 disconnect.
+# It clears after 10 minutes with none of them and at most 1 disconnect - but
+# not while an unannounced bridge is connected, which shows nothing else until
+# it stops.
 #
 # Both bridges write the one sensor. When one of them is the Home Assistant
 # app, only the app does, so it names the computer that is not Home Assistant.
@@ -1612,6 +1616,10 @@ DUPLICATE_REPUBLISH_SECONDS = 60    # our announcement re-sent at most this ofte
 DUPLICATE_DISCONNECTS = 5           # more than this many unexpected disconnects...
 DUPLICATE_DISCONNECT_WINDOW = 60    # ...in this many seconds
 DUPLICATE_CHECK_SECONDS = 5         # how often watch_duplicate_bridge looks
+DUPLICATE_ECHO_SECONDS = 3          # paho re-sends an unacknowledged "online"
+                                    # within this of reconnecting
+DUPLICATE_ANNOUNCE_SECONDS = 10     # a 1.5.1 bridge announces itself within this
+                                    # of setting "online"; one that does not is older
 
 # Supervisor gives every app this token: set, this bridge is the app.
 RUNNING_AS_APP = bool(os.environ.get("SUPERVISOR_TOKEN"))
@@ -1658,6 +1666,10 @@ class DuplicateBridgeMonitor:
         self.signal_at = None         # the latest signal
         self.disconnects = deque()    # unexpected ones, last DUPLICATE_CLEAR_SECONDS
         self.established = False      # a disconnect counts only after a CONNACK 0
+        self.connected_at = None
+        self.echoes = 0               # our own "online"s still to come back
+        self.foreign_online_at = None # another client did, and has not announced itself
+        self.unannounced = False      # ...nor within DUPLICATE_ANNOUNCE_SECONDS
         self.republish_due = False
         self.republished_at = None
         self.logged_at = {}           # reason -> last ERROR line
@@ -1666,12 +1678,15 @@ class DuplicateBridgeMonitor:
 
     # --- paho's thread ---------------------------------------------------------
 
-    def connected(self, client):
+    def connected(self, client, now=None):
         """On every connect, BEFORE subscribing: the broker then replays this
         bridge's own announcement, never the one an earlier start left. The
-        sensor is restated: a publish while disconnected may not have gone."""
+        sensor is restated: a publish while disconnected may not have gone.
+        on_connect has just set farm/bridge/status online."""
         client.publish(BRIDGE_INSTANCE_TOPIC, self.instance, qos=1, retain=True)
         with self._lock:
+            self.connected_at = time.monotonic() if now is None else now
+            self.echoes = 0
             self.established = True
             self.pub_attributes = self.pub_state = None
             self._publish(client)
@@ -1691,6 +1706,7 @@ class DuplicateBridgeMonitor:
             self.other = {"other_id": other_id, "other_host": msg.get("host"),
                           "other_version": msg.get("version")}
             self.other_app = msg.get("app") is True
+            self.foreign_online_at = None   # its "online" came with an announcement
             if self._log_due("instance", now):
                 log.error("Another Greenery bridge is running on this broker: "
                           "id=%s, host=%s, version=%s",
@@ -1699,15 +1715,31 @@ class DuplicateBridgeMonitor:
             self._republish(client, now)
             self._signal(client, "instance", now)
 
-    def status_message(self, client, payload, now=None):
+    def status_message(self, client, payload, retain=False, now=None):
         """This bridge's own Last Will fires only once it is gone, so an
         offline it receives is another client's. Set straight back to online,
-        or every entity stays unavailable."""
+        or every entity stays unavailable.
+
+        An online it did not just send is another bridge connecting. The
+        retained copy replayed on subscribe is this bridge's own, sent first."""
+        now = time.monotonic() if now is None else now
+        if payload == b"online":
+            with self._lock:
+                if self.echoes:
+                    self.echoes -= 1
+                    return
+                if retain or (self.connected_at is not None
+                              and now - self.connected_at < DUPLICATE_ECHO_SECONDS):
+                    return
+                if self.foreign_online_at is None:
+                    self.foreign_online_at = now   # decided in tick()
+            return
         if payload != b"offline":
             return
         client.publish(BRIDGE_STATUS_TOPIC, "online", qos=1, retain=True)
-        now = time.monotonic() if now is None else now
         with self._lock:
+            self.echoes += 1
+            self.unannounced = False                # whatever it was, it has gone
             if self._log_due("foreign_offline", now):
                 log.error("%s went offline while this bridge is connected: another "
                           "bridge's Last Will. Set back to online", BRIDGE_STATUS_TOPIC)
@@ -1735,12 +1767,24 @@ class DuplicateBridgeMonitor:
     # --- asyncio thread --------------------------------------------------------
 
     def tick(self, client, now=None):
-        """A held-back re-announcement, and the 10-minute clear."""
+        """A held-back re-announcement, an unannounced bridge, and the
+        10-minute clear."""
         now = time.monotonic() if now is None else now
         with self._lock:
             self._republish(client, now)
+            if (self.foreign_online_at is not None
+                    and now - self.foreign_online_at >= DUPLICATE_ANNOUNCE_SECONDS):
+                self.foreign_online_at, self.unannounced = None, True
+                # Not whichever bridge announced itself earlier: this one never said.
+                self.other, self.other_app = {}, False
+                if self._log_due("foreign_online", now):
+                    log.error("%s was set online by another client that never announced "
+                              "itself: a bridge older than 1.5.1, such as the retired "
+                              "Windows bridge, has connected", BRIDGE_STATUS_TOPIC)
+                self._signal(client, "foreign_online", now)
             self._forget_disconnects(now)
-            if (not self.on or now - self.signal_at < DUPLICATE_CLEAR_SECONDS
+            if (not self.on or self.unannounced
+                    or now - self.signal_at < DUPLICATE_CLEAR_SECONDS
                     or len(self.disconnects) > 1):
                 return
             self.on, self.reason, self.other, self.other_app = False, None, {}, False
@@ -1896,7 +1940,7 @@ def build_mqtt_client() -> mqtt.Client:
             DUPLICATE.instance_message(c, msg.payload)
             return
         if topic == availability_topic:
-            DUPLICATE.status_message(c, msg.payload)
+            DUPLICATE.status_message(c, msg.payload, msg.retain)
             return
         if topic == COOL_DOWN_ACTIVE_TOPIC:
             if msg.retain:
