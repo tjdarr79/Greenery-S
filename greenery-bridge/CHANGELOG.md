@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.5.1
+
+Duplicate bridge protection. Safe to upgrade: no entity ID, unique_id or MQTT
+topic changes, no new options. **Update before releasing to `stable`.**
+
+On 3 Corners Farm the retired Windows bridge, still started by Task Scheduler
+on the farm PC, ran alongside this app. Both connected to Mosquitto as
+`farm-bridge`; the broker allows one connection per client ID, so each kicked
+the other off about once a second, and every kick took every entity
+unavailable. The database grew to 16.5 GB at ~10 million rows a day, and Home
+Assistant slowed down (Cool-Down with it).
+
+- **A client ID of its own** for every start:
+  `greenery-bridge-<farm>-<6 hex>`, logged on connect. Two bridges can no
+  longer kick each other off.
+- **Duplicate Bridge Detected** (diagnostic, problem), on when another bridge
+  announces itself on `farm/bridge/instance`, when another bridge's Last Will
+  sets the farm offline while this one is connected (the app sets it straight
+  back online, so entities do not stay unavailable), or after more than 5
+  unexpected disconnects in 60 s. Attributes `other_id`, `other_host`,
+  `other_version`, `reason`. Clears after 10 quiet minutes. When one of the two
+  is the app, only the app writes it, so `other_host` names the other computer.
+  Every bridge from 1.5.1 announces itself; an older one is seen when it stops.
+- New automation `25-duplicate-bridge`: a **critical** alert naming the other
+  computer. Paste it.
+- Legacy Windows installer: a warning not to run it alongside the app, and
+  `UNINSTALL-FARM-BRIDGE.bat` now also removes the `FarmBridge` task from the
+  manual guide (and any task that runs `farm_bridge.py`), stops the bridge
+  whatever its Python process is called, and lists what it did.
+- DOCS.md: Troubleshooting, *Every entity keeps going unavailable / database
+  growing fast*, and a *Database health check*: rows per entity in the last
+  hour. README: *No other bridge on this farm's network* in New install.
+
 ## 1.5.0
 
 Cameras, latest photo only. Safe to upgrade: no existing entity ID changes and

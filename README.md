@@ -56,7 +56,17 @@ Yellow, a Pi, or an x86 box. No separate computer.
 2. Add the URL from the table above — `#stable` for a customer farm
 3. Install **Greenery S Farm Bridge**
 4. **Configuration** tab → set **Farm name** (e.g. `Smith Farm`) → **Save**
-5. Press **Start**
+5. **No other bridge on this farm's network** — see below
+6. Press **Start**
+
+**No other bridge on this farm's network.** Two bridges on one broker flooded
+a farm's database at ~10 million rows a day (CHANGELOG 1.5.1). Before Start, on
+any PC at the farm that ever ran the Windows bridge: **Task Scheduler → Task
+Scheduler Library**, look for `Greenery S Farm Bridge` or `FarmBridge`; if
+either is there, run `legacy/windows-installer/UNINSTALL-FARM-BRIDGE.bat` on
+that PC. After Start, the **Mosquitto broker** app's **Log** must not repeat
+`Client … already connected, closing old connection.`, and **Duplicate Bridge
+Detected** (step 2) must be off.
 
 **Set Farm name before the first start.** It names the device and decides every
 entity ID (`Smith Farm` → `sensor.smith_farm_cultivation_ph`). Changing it after
@@ -88,7 +98,8 @@ Assistant** further down. The old Windows installer is retired to
 **Settings → Devices & Services → MQTT → your farm name.** You should see ~54
 entities. The device lives *inside* the MQTT card — it is not listed at the top
 level of Devices & Services, which is easy to miss. The app's **Log** tab shows
-the entity ID prefix this farm got.
+the entity ID prefix this farm got. Under **Diagnostic**, **Duplicate Bridge
+Detected** must be **off**.
 
 Nothing below works until entities are appearing.
 
@@ -147,7 +158,7 @@ that, when skipped, let ten dead automations go unnoticed indefinitely. See
 
 ### 4. Install the automations
 
-Twenty-four files in `automations/`, pasted one at a time — HA's editor rejects a
+Twenty-five files in `automations/`, pasted one at a time — HA's editor rejects a
 multi-automation list. None of them contain a phone name; that lives only in
 the script. See **Installing the automations**.
 
@@ -187,7 +198,7 @@ carry `confirmation:` or a pocket-tap will stop the farm.
 | `farm-bridge.env.example` | Copy to `farm-bridge.env` and fill in |
 | `farm-bridge.service` | systemd unit (Linux) |
 | `farm-alerts-script.yaml` | The notification hub. **The only file containing a phone name** |
-| `automations/01`–`24` | Alert automations, pasted into HA one at a time |
+| `automations/01`–`25` | Alert automations, pasted into HA one at a time |
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard, with the Dosing Tanks card under Environmental |
 | `farm-dashboard-mobile.yaml` | Phone dashboard, the same cards stacked |
@@ -248,7 +259,9 @@ is not an error condition.
 ## Running the bridge outside Home Assistant
 
 Only for a site where Home Assistant OS cannot host the app — for example HA
-Container, or a broker on another machine. Everything in **New install** from
+Container, or a broker on another machine. **One bridge per farm: never run
+this alongside the app** — two bridges on one broker flood the database
+(CHANGELOG 1.5.1). Everything in **New install** from
 step 2 onward still applies; only step 1 is replaced by what follows. Windows
 hosts: the retired installer in `legacy/windows-installer/` still works, but is
 unmaintained.
@@ -398,7 +411,7 @@ level of Devices & Services. Easy to miss when you are looking for it by name.
 
 ## Alert automations
 
-Twenty-four phone-notification automations live in `automations/`, one file each,
+Twenty-five phone-notification automations live in `automations/`, one file each,
 covering the thresholds actually needed for daily operation. They notify
 via Home Assistant's Companion App, not email/SMS.
 
@@ -432,6 +445,7 @@ deployed — see "Notification routing" below.**
 | `22-farmhand-version-changed.yaml` | farmhand Version changes | immediate | Task Mode, pump switches, Cool-Down and 24-hour switches use unsupported commands — re-test them |
 | `23-dosing-tank-alert.yaml` | The bridge sends a dosing tank alert | as sent | Tank low (every 12 h while low), sensor unstable (at most daily), sensor silent 21 days (weekly). Timing is decided in the bridge — see **Dosing tank levels** |
 | `24-camera-stale.yaml` | Camera Photos Stale turns on | immediate, at most once per 24 h | A camera's latest photo is over 2.5 photo cycles (7.5 h) old — the camera or farmhand's photo cycle has stopped. Not critical |
+| `25-duplicate-bridge.yaml` | Duplicate Bridge Detected turns on | immediate | **Critical.** A second bridge on this farm's broker — usually the retired Windows one. Before 1.5.1 that flapped every entity and filled the database at ~10 million rows a day. See **Every entity keeps going unavailable** in `greenery-bridge/DOCS.md` |
 
 ### Water temp measurement caveat (important)
 

@@ -44,6 +44,7 @@ REQUIRED = [
     "tools/farmhand/dump_cameras.py", "tools/farmhand/hvac_logger.py",
     "tests/test_dosing_tanks.py",
     "tests/conftest.py", "tests/test_cameras.py",
+    "tests/test_duplicate_bridge.py",
     "tests/fixtures/farmhand/README.md",
     "tests/fixtures/farmhand/farm_images_sample.sse",
     "tests/fixtures/farmhand/camera_aliases.json",
@@ -74,6 +75,7 @@ AUTOMATIONS = [
     "19-hvac-cooling-stuck", "20-send-pump-pressure",
     "21-cool-down-fault", "22-farmhand-version-changed",
     "23-dosing-tank-alert", "24-camera-stale",
+    "25-duplicate-bridge",
 ]
 
 # Stale files that should have been removed or moved
@@ -161,6 +163,14 @@ MARKERS = {
         ('"greenery_s_camera_photos_stale"', "Camera Photos Stale sensor"),
         ("CAMERA_STALE_CYCLES = 2.5", "stale after 2.5 photo cycles"),
         ("WITHOUT a request", "unprompted photos logged"),
+        ("secrets.token_hex(3)", "MQTT client ID new to every start"),
+        ("mqtt.Client(client_id=MQTT_CLIENT_ID,", "the bridge connects with that ID"),
+        ('"greenery_s_duplicate_bridge_detected"', "Duplicate Bridge Detected sensor"),
+        ("DUPLICATE.connected(c)", "every connect announced on farm/bridge/instance"),
+        ("DUPLICATE.instance_message(c, msg.payload)", "another bridge's announcement read"),
+        ("DUPLICATE.status_message(c, msg.payload)", "a stray offline set back to online"),
+        ("DUPLICATE.disconnected(c, rc)", "disconnect bursts counted"),
+        ("asyncio.create_task(watch_duplicate_bridge(", "the 10-minute clear runs"),
     ],
     "farm-alerts-script.yaml": [
         ("notify.send_message", "durable notify ENTITY path"),
@@ -198,6 +208,8 @@ MARKERS = {
         ("### Acceptance test — on the farm", "dosing tank acceptance test"),
         ("`23-dosing-tank-alert.yaml`", "dosing tank alert in the automation table"),
         ("## Cameras (latest photo only)", "cameras documentation"),
+        ("**No other bridge on this farm's network.**", "install checklist: one bridge per farm"),
+        ("`25-duplicate-bridge.yaml`", "duplicate bridge alert in the automation table"),
     ],
     "CONTRIBUTING.md": [
         ("git merge --ff-only main", "stable only fast-forwards to main"),
@@ -214,6 +226,9 @@ MARKERS = {
         ("export FARM_DOSING_TANK_NAMES=", "tank names passed to the bridge"),
         ("export FARM_DOSING_LEVEL_LOW_VALUE=", "tank polarity passed to the bridge"),
         ("export FARM_DOSING_SILENT_DAYS=", "backstop days passed to the bridge"),
+    ],
+    "greenery-bridge/Dockerfile": [
+        ("ENV FARM_BRIDGE_VERSION=${BUILD_VERSION}", "app version announced by the bridge"),
     ],
     "greenery-bridge/config.yaml": [
         ("mqtt:want", "MQTT service declared"),
@@ -249,6 +264,11 @@ MARKERS = {
         ("## Cameras", "cameras documented"),
         ("Only the latest photo is kept", "no photo history, stated"),
         ("- camera", "recorder exclude documented"),
+        ("**Every entity keeps going unavailable / database growing fast**",
+         "duplicate bridge troubleshooting"),
+        ("already connected, closing old connection", "the Mosquitto log line to look for"),
+        ("## Database health check", "rows-per-entity check documented"),
+        ("< /config/dbcheck4.sql", "query run from a file, not inline"),
     ],
     "tools/render-farm-yaml.py": [
         ("ENTITY_REF.subn", "entity IDs rewritten"),
@@ -266,6 +286,24 @@ MARKERS = {
     ],
     "legacy/windows-installer/README.md": [
         ("Do not use this for a new install", "marked as retired"),
+        ("Do not run alongside the Home Assistant app", "warned off running beside the app"),
+        ("UNINSTALL-FARM-BRIDGE.bat", "how to remove it"),
+    ],
+    "legacy/windows-installer/WINDOWS-INSTALL.md": [
+        ("Do not run alongside the Home Assistant app", "warned off running beside the app"),
+        ("UNINSTALL-FARM-BRIDGE.bat", "how to remove it"),
+    ],
+    "legacy/windows-installer/install/Uninstall-FarmBridge.ps1": [
+        ('$knownNames = @($taskName, "FarmBridge")', "also removes the manual guide's task"),
+        ('-match "farm_bridge|run-bridge\\.cmd"', "and any task that runs the bridge"),
+        ("Get-CimInstance Win32_Process", "stops the bridge by command line"),
+        ("What this did", "reports what it removed"),
+    ],
+    "automations/25-duplicate-bridge.yaml": [
+        ("binary_sensor.greenery_s_farm_duplicate_bridge_detected", "watches the sensor"),
+        ('from: "off"', "never fires on a restart"),
+        ("critical: true", "critical alert"),
+        ("other_host", "names the other computer"),
     ],
     "dashboard-controls.yaml": [
         ("confirmation:", "confirmation guard"),
@@ -535,6 +573,45 @@ def main():
     except (OSError, SyntaxError) as e:
         check(False, "camera checks readable", str(e)[:70])
 
+    print("\n--- MQTT client ID is never fixed ---")
+    # A fixed client ID ("farm-bridge" until 1.5.1) lets a second bridge take
+    # this one's connection over, about once a second, for as long as both run:
+    # every entity flaps and the database floods. Any literal client_id fails.
+    fixed = []
+    sources = [root / "farm_bridge.py", root / "greenery-bridge" / "farm_bridge.py",
+               *sorted((root / "tools").rglob("*.py")), *sorted((root / "tests").rglob("*.py"))]
+    for p in sources:
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, SyntaxError):
+            continue   # reported by the presence and parse checks
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            ids = [kw.value for kw in node.keywords if kw.arg == "client_id"]
+            if getattr(node.func, "attr", getattr(node.func, "id", None)) == "Client" and node.args:
+                ids.append(node.args[0])
+            if any(isinstance(v, (ast.Constant, ast.JoinedStr)) for v in ids):
+                fixed.append(f"{p.relative_to(root).as_posix()}:{node.lineno}")
+    check(not fixed, "no MQTT client is given a fixed client_id", ", ".join(fixed))
+    try:
+        tree = ast.parse((root / "farm_bridge.py").read_text(encoding="utf-8"))
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "make_client_id")
+        check("secrets.token_hex" in ast.unparse(fn), "make_client_id() adds a random part every start")
+    except (OSError, SyntaxError, StopIteration) as e:
+        check(False, "make_client_id() present in farm_bridge.py", str(e)[:70])
+
+    print("\n--- Legacy uninstaller removes what the installer registers ---")
+    try:
+        names = [re.search(r'^\$taskName = "([^"]+)"', (root / rel).read_text(encoding="utf-8"), re.M)
+                 for rel in ("legacy/windows-installer/install/Install-FarmBridge.ps1",
+                             "legacy/windows-installer/install/Uninstall-FarmBridge.ps1")]
+        check(None not in names and names[0].group(1) == names[1].group(1),
+              "Uninstall-FarmBridge.ps1 removes the task name Install-FarmBridge.ps1 registers",
+              str([n.group(1) if n else None for n in names]))
+    except OSError as e:
+        check(False, "legacy installer scripts readable", str(e)[:70])
+
     print("\n--- YAML parses ---")
     bdir = root / "greenery-bridge"
     for p in (sorted(root.glob("*.yaml"))
@@ -551,7 +628,8 @@ def main():
                 "tools/render-farm-yaml.py", "tools/farmhand/dump_settings.py",
                 "tools/farmhand/set_24hr.py", "tools/farmhand/dosing_levels.py",
                 "tools/farmhand/dump_cameras.py", "tools/farmhand/hvac_logger.py",
-                "tests/test_dosing_tanks.py", "tests/conftest.py", "tests/test_cameras.py"]:
+                "tests/test_dosing_tanks.py", "tests/conftest.py", "tests/test_cameras.py",
+                "tests/test_duplicate_bridge.py"]:
         p = root / rel
         if not p.is_file():
             check(False, f"{rel} (missing)")
@@ -609,12 +687,12 @@ def main():
     fb = root / "farm_bridge.py"
     if fb.is_file():
         n = len(fb.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 2570, f"farm_bridge.py is {n} lines (expect ~2605)",
+        check(n >= 2810, f"farm_bridge.py is {n} lines (expect ~2846)",
               "too short - a patch is probably missing")
     rm = root / "README.md"
     if rm.is_file():
         n = len(rm.read_text(encoding="utf-8", errors="replace").splitlines())
-        check(n >= 1345, f"README.md is {n} lines (expect ~1375)",
+        check(n >= 1355, f"README.md is {n} lines (expect ~1388)",
               "too short - doc updates missing")
 
     print("\n" + "=" * 62)

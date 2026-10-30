@@ -28,12 +28,15 @@ import logging
 import math
 import os
 import re
+import secrets
+import socket
 import threading
 import time
 import unicodedata
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 
 import aiohttp
 import paho.mqtt.client as mqtt
@@ -1580,6 +1583,248 @@ async def watch_dosing_tanks(client):
 # --- END dosing tank levels ---
 
 
+# ---------------------------------------------------------------------------
+# DUPLICATE BRIDGE DETECTION
+#
+# Two bridges on one broker filled a farm's database at ~10 million rows a
+# day. Both connected as client ID "farm-bridge"; the broker allows one
+# connection per ID, so each kicked the other off about once a second, and
+# farm/bridge/status - every entity's availability - flapped with it.
+#
+# A client ID new to every start means two bridges can no longer kick each
+# other off. Any one of three signals then turns Duplicate Bridge Detected on:
+#   instance         another bridge's announcement on farm/bridge/instance
+#   foreign_offline  farm/bridge/status = offline while this bridge is
+#                    connected: another client's Last Will - a bridge stopped
+#   disconnects      over 5 unexpected disconnects in 60 s
+# It clears after 10 minutes with none of them and at most 1 disconnect.
+#
+# Both bridges write the one sensor. When one of them is the Home Assistant
+# app, only the app does, so it names the computer that is not Home Assistant.
+# ---------------------------------------------------------------------------
+
+BRIDGE_STATUS_TOPIC = f"{MQTT_BASE_TOPIC}/bridge/status"
+BRIDGE_INSTANCE_TOPIC = f"{MQTT_BASE_TOPIC}/bridge/instance"
+DUPLICATE_BRIDGE_TOPIC = f"{MQTT_BASE_TOPIC}/duplicate_bridge/state"
+DUPLICATE_BRIDGE_ATTRIBUTES_TOPIC = f"{MQTT_BASE_TOPIC}/duplicate_bridge/attributes"
+DUPLICATE_CLEAR_SECONDS = 600       # this quiet clears it; also the log repeat
+DUPLICATE_REPUBLISH_SECONDS = 60    # our announcement re-sent at most this often
+DUPLICATE_DISCONNECTS = 5           # more than this many unexpected disconnects...
+DUPLICATE_DISCONNECT_WINDOW = 60    # ...in this many seconds
+DUPLICATE_CHECK_SECONDS = 5         # how often watch_duplicate_bridge looks
+
+# Supervisor gives every app this token: set, this bridge is the app.
+RUNNING_AS_APP = bool(os.environ.get("SUPERVISOR_TOKEN"))
+
+
+def make_client_id() -> str:
+    """This start's MQTT client ID. Never a fixed one: the broker drops a
+    connection when another client connects with its ID."""
+    return f"greenery-bridge-{farm_slug(FARM_NAME)}-{secrets.token_hex(3)}"
+
+
+def bridge_version() -> str:
+    """The app's version, set in its image; run from a checkout, the
+    checkout's greenery-bridge/config.yaml."""
+    version = (os.environ.get("FARM_BRIDGE_VERSION") or "").strip()
+    if version:
+        return version
+    cfg = Path(__file__).resolve().parent / "greenery-bridge" / "config.yaml"
+    try:
+        m = re.search(r'^version:\s*"?([\w.-]+)', cfg.read_text(encoding="utf-8"), re.M)
+    except OSError:
+        m = None
+    return m.group(1) if m else "unknown"
+
+
+class DuplicateBridgeMonitor:
+    """Duplicate Bridge Detected, from the three signals above.
+
+    Messages and disconnects arrive on paho's thread and tick() on the asyncio
+    thread, so one lock guards it all. `now` is time.monotonic(); tests pass
+    their own.
+    """
+
+    def __init__(self, client_id, host, version, started, app=False):
+        self.client_id = client_id
+        self.app = app
+        self.instance = json.dumps({"id": client_id, "host": host, "version": version,
+                                    "started": started, "app": app})
+        self._lock = threading.Lock()
+        self.on = False
+        self.reason = None
+        self.other = {}               # other_id/_host/_version from its announcement
+        self.other_app = False        # ...and whether it is the app
+        self.signal_at = None         # the latest signal
+        self.disconnects = deque()    # unexpected ones, last DUPLICATE_CLEAR_SECONDS
+        self.established = False      # a disconnect counts only after a CONNACK 0
+        self.republish_due = False
+        self.republished_at = None
+        self.logged_at = {}           # reason -> last ERROR line
+        self.pub_attributes = None    # last sent, this connection
+        self.pub_state = None
+
+    # --- paho's thread ---------------------------------------------------------
+
+    def connected(self, client):
+        """On every connect, BEFORE subscribing: the broker then replays this
+        bridge's own announcement, never the one an earlier start left. The
+        sensor is restated: a publish while disconnected may not have gone."""
+        client.publish(BRIDGE_INSTANCE_TOPIC, self.instance, qos=1, retain=True)
+        with self._lock:
+            self.established = True
+            self.pub_attributes = self.pub_state = None
+            self._publish(client)
+        client.subscribe(BRIDGE_INSTANCE_TOPIC, qos=1)
+        client.subscribe(BRIDGE_STATUS_TOPIC, qos=1)
+
+    def instance_message(self, client, payload, now=None):
+        try:
+            msg = json.loads(payload)
+            other_id = str(msg["id"])
+        except (ValueError, TypeError, KeyError):
+            return
+        if other_id == self.client_id:
+            return
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            self.other = {"other_id": other_id, "other_host": msg.get("host"),
+                          "other_version": msg.get("version")}
+            self.other_app = msg.get("app") is True
+            if self._log_due("instance", now):
+                log.error("Another Greenery bridge is running on this broker: "
+                          "id=%s, host=%s, version=%s",
+                          other_id, msg.get("host"), msg.get("version"))
+            self.republish_due = True
+            self._republish(client, now)
+            self._signal(client, "instance", now)
+
+    def status_message(self, client, payload, now=None):
+        """This bridge's own Last Will fires only once it is gone, so an
+        offline it receives is another client's. Set straight back to online,
+        or every entity stays unavailable."""
+        if payload != b"offline":
+            return
+        client.publish(BRIDGE_STATUS_TOPIC, "online", qos=1, retain=True)
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            if self._log_due("foreign_offline", now):
+                log.error("%s went offline while this bridge is connected: another "
+                          "bridge's Last Will. Set back to online", BRIDGE_STATUS_TOPIC)
+            self._signal(client, "foreign_offline", now)
+
+    def disconnected(self, client, rc, now=None):
+        """A refused connect (bad password) also ends in a disconnect, with
+        paho's back-off; only the loss of an established connection counts."""
+        with self._lock:
+            established, self.established = self.established, False
+            if rc == 0 or not established:
+                return
+            now = time.monotonic() if now is None else now
+            self.disconnects.append(now)
+            self._forget_disconnects(now)
+            recent = sum(1 for t in self.disconnects if now - t < DUPLICATE_DISCONNECT_WINDOW)
+            if recent <= DUPLICATE_DISCONNECTS:
+                return
+            if self._log_due("disconnects", now):
+                log.error("%d unexpected MQTT disconnects in %d s: another bridge is "
+                          "taking this connection over, or the broker or network is "
+                          "failing", recent, DUPLICATE_DISCONNECT_WINDOW)
+            self._signal(client, "disconnects", now)
+
+    # --- asyncio thread --------------------------------------------------------
+
+    def tick(self, client, now=None):
+        """A held-back re-announcement, and the 10-minute clear."""
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            self._republish(client, now)
+            self._forget_disconnects(now)
+            if (not self.on or now - self.signal_at < DUPLICATE_CLEAR_SECONDS
+                    or len(self.disconnects) > 1):
+                return
+            self.on, self.reason, self.other, self.other_app = False, None, {}, False
+            log.info("Duplicate Bridge Detected cleared: no sign of another bridge "
+                     "for %d min", DUPLICATE_CLEAR_SECONDS // 60)
+            self._publish(client)
+
+    def publish_discovery(self, client):
+        # No availability_topic: farm/bridge/status is what a second bridge
+        # corrupts, and this sensor must show through that.
+        client.publish(
+            f"{DISCOVERY_PREFIX}/binary_sensor/duplicate_bridge_detected/config",
+            json.dumps({
+                "name": "Duplicate Bridge Detected",
+                "unique_id": "greenery_s_duplicate_bridge_detected",
+                "state_topic": DUPLICATE_BRIDGE_TOPIC,
+                "json_attributes_topic": DUPLICATE_BRIDGE_ATTRIBUTES_TOPIC,
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device_class": "problem",
+                "entity_category": "diagnostic",
+                "device": DEVICE_INFO,
+            }),
+            qos=1, retain=True,
+        )
+        log.info("Published discovery config for Duplicate Bridge Detected")
+
+    # --- under the lock --------------------------------------------------------
+
+    def _signal(self, client, reason, now):
+        self.on, self.reason, self.signal_at = True, reason, now
+        # Sent even unchanged: the other bridge may have overwritten it - with
+        # its own OFF as it started, for one.
+        self._publish(client, force=True)
+
+    def _republish(self, client, now):
+        """Ours, answering another's - at most once per DUPLICATE_REPUBLISH_SECONDS.
+        Held back, not dropped: two bridges then keep seeing each other at that
+        pace, and neither clears while both run."""
+        if not self.republish_due or (self.republished_at is not None and
+                                      now - self.republished_at < DUPLICATE_REPUBLISH_SECONDS):
+            return
+        self.republish_due, self.republished_at = False, now
+        client.publish(BRIDGE_INSTANCE_TOPIC, self.instance, qos=1, retain=True)
+
+    def _forget_disconnects(self, now):
+        while self.disconnects and now - self.disconnects[0] >= DUPLICATE_CLEAR_SECONDS:
+            self.disconnects.popleft()
+
+    def _log_due(self, reason, now) -> bool:
+        last = self.logged_at.get(reason)
+        if last is not None and now - last < DUPLICATE_CLEAR_SECONDS:
+            return False
+        self.logged_at[reason] = now
+        return True
+
+    def _publish(self, client, force=False):
+        if self.other_app and not self.app:
+            return
+        attributes = {"other_id": None, "other_host": None, "other_version": None,
+                      **self.other, "reason": self.reason}
+        state = "ON" if self.on else "OFF"
+        # Attributes first, so the alert sees the other host when it turns ON.
+        if force or attributes != self.pub_attributes:
+            self.pub_attributes = attributes
+            client.publish(DUPLICATE_BRIDGE_ATTRIBUTES_TOPIC, json.dumps(attributes),
+                           qos=1, retain=True)
+        if force or state != self.pub_state:
+            self.pub_state = state
+            client.publish(DUPLICATE_BRIDGE_TOPIC, state, qos=1, retain=True)
+
+
+MQTT_CLIENT_ID = make_client_id()   # once per start
+DUPLICATE = DuplicateBridgeMonitor(MQTT_CLIENT_ID, socket.gethostname(),
+                                   bridge_version(), int(time.time()), RUNNING_AS_APP)
+
+
+async def watch_duplicate_bridge(client):
+    while True:
+        await asyncio.sleep(DUPLICATE_CHECK_SECONDS)
+        try:
+            DUPLICATE.tick(client)
+        except Exception:
+            log.exception("Duplicate bridge check failed")
 
 
 # ---------------------------------------------------------------------------
@@ -1599,7 +1844,7 @@ CONNACK_CODES = {
 
 
 def build_mqtt_client() -> mqtt.Client:
-    client = mqtt.Client(client_id="farm-bridge", clean_session=True)
+    client = mqtt.Client(client_id=MQTT_CLIENT_ID, clean_session=True)
     if MQTT_USERNAME:
         client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
@@ -1621,8 +1866,9 @@ def build_mqtt_client() -> mqtt.Client:
     def on_connect(c, userdata, flags, rc):
         msg = CONNACK_CODES.get(rc, f"Unknown return code {rc}")
         if rc == 0:
-            log.info(f"MQTT connected: {msg}")
+            log.info(f"MQTT connected: {msg} (client ID {MQTT_CLIENT_ID})")
             c.publish(availability_topic, "online", qos=1, retain=True)
+            DUPLICATE.connected(c)
             for topic in [*button_handlers, *output_set_topics, *fh24_set_topics]:
                 c.subscribe(topic, qos=1)
             # Read back, not acted on: whether a cool-down was running when
@@ -1639,12 +1885,19 @@ def build_mqtt_client() -> mqtt.Client:
     def on_disconnect(c, userdata, rc):
         if rc != 0:
             log.warning(f"MQTT disconnected unexpectedly (rc={rc}); paho will auto-reconnect")
+        DUPLICATE.disconnected(c, rc)
 
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
 
     def on_message(c, userdata, msg):
         topic = msg.topic
+        if topic == BRIDGE_INSTANCE_TOPIC:
+            DUPLICATE.instance_message(c, msg.payload)
+            return
+        if topic == availability_topic:
+            DUPLICATE.status_message(c, msg.payload)
+            return
         if topic == COOL_DOWN_ACTIVE_TOPIC:
             if msg.retain:
                 cool_down_retained(msg.payload == b"ON")
@@ -1750,6 +2003,7 @@ def publish_discovery(client: mqtt.Client):
     publish_farmhand_discovery(client, availability_topic)
     DOSING.publish_discovery(client, availability_topic)
     publish_camera_discovery(client, availability_topic)
+    DUPLICATE.publish_discovery(client)
 
 
 def extract_value(payload: dict, sensor: SensorDef):
@@ -2579,7 +2833,8 @@ async def run_forever():
                         asyncio.create_task(watch_board_data(mqtt_client)),
                         asyncio.create_task(watch_dosing_tanks(mqtt_client)),
                         asyncio.create_task(run_farm_images(mqtt_client)),
-                        asyncio.create_task(poll_cameras(mqtt_client))]
+                        asyncio.create_task(poll_cameras(mqtt_client)),
+                        asyncio.create_task(watch_duplicate_bridge(mqtt_client))]
 
     while True:
         try:

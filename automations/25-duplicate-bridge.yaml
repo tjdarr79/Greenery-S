@@ -1,0 +1,38 @@
+alias: Farm Duplicate Bridge
+description: >-
+  Two Greenery bridges on one MQTT broker - typically the retired Windows
+  bridge, still started by Task Scheduler on the farm PC, alongside the Home
+  Assistant app. Before 1.5.1 both connected with the same client ID and kicked
+  each other off about once a second: every entity flapped unavailable and the
+  database grew by ~10 million rows a day. The bridge turns Duplicate Bridge
+  Detected on when another bridge announces itself, when another bridge's Last
+  Will sets the farm offline, or after more than 5 unexpected disconnects in
+  60 s. It clears after 10 quiet minutes.
+
+  Critical: the database can fill Home Assistant's disk within days.
+
+  Fires on OFF -> ON only, so a bridge or Home Assistant restart does not page
+  again.
+
+  Test the alert: Developer Tools -> States, set
+  binary_sensor.greenery_s_farm_duplicate_bridge_detected to "on" (from "off").
+  The bridge does not correct it until its next start; set it back to "off".
+triggers:
+  - entity_id: binary_sensor.greenery_s_farm_duplicate_bridge_detected
+    from: "off"
+    to: "on"
+    trigger: state
+actions:
+  - action: script.farm_alerts
+    continue_on_error: true
+    data:
+      title: 🚨 Duplicate Bridge Detected
+      notification_id: farm_duplicate_bridge
+      critical: true
+      message: >-
+        {% set host = trigger.to_state.attributes.get('other_host') %}
+        Another Greenery bridge is connected to this farm's broker{{ ' (host ' ~ host ~ ')' if host else '' }}.
+        Every sensor is flapping and Home Assistant's database is filling fast.
+        Stop the other bridge: on a Windows PC check Task Scheduler for the farm
+        bridge task.
+mode: single

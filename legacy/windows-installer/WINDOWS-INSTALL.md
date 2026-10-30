@@ -1,5 +1,12 @@
 # Greenery S → Home Assistant Bridge — Windows Setup Guide
 
+> **Do not run alongside the Home Assistant app. Two bridges on one broker
+> flood the database (see CHANGELOG 1.5.1).** To remove this bridge from a PC:
+> double-click `UNINSTALL-FARM-BRIDGE.bat` in `legacy/windows-installer/` (it
+> removes the startup task, stops the bridge and lists what it did), then open
+> **Task Scheduler → Task Scheduler Library** and check that no task still
+> starts `farm_bridge.py` — for example `FarmBridge`, from Step 6 of this guide.
+
 Takes local sensor data from a Freight Farms Greenery S and pipes it into
 Home Assistant, with dashboard panels and trend graphs. No dependency on
 Farmhand's cloud dashboard for monitoring.

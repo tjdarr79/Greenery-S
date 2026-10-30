@@ -1,6 +1,11 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/base:latest
 FROM ${BUILD_FROM}
 
+# Supervisor passes the app's version in; the bridge announces it on
+# farm/bridge/instance so a second bridge can be told apart.
+ARG BUILD_VERSION
+ENV FARM_BRIDGE_VERSION=${BUILD_VERSION}
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY requirements.txt /tmp/requirements.txt
