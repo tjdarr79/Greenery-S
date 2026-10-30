@@ -16,6 +16,7 @@ class FakeMqtt:
 
     def __init__(self):
         self.published = []
+        self.subscribed = []
         self.connected = True
 
     def is_connected(self):
@@ -23,6 +24,9 @@ class FakeMqtt:
 
     def publish(self, topic, payload=None, qos=0, retain=False):
         self.published.append((topic, payload, qos, retain))
+
+    def subscribe(self, topic, qos=0):
+        self.subscribed.append(topic)
 
     def topics(self):
         return [t for t, *_ in self.published]

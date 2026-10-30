@@ -166,7 +166,9 @@ card — it is not listed at the top level of Devices & Services, which is easy
 to miss.
 
 The add-on **Log** tab should show `Farm name: …` with the entity ID prefix,
-then `MQTT connected`, then a steady stream of published states.
+then `MQTT connected: Connected successfully (client ID greenery-bridge-…)`,
+then a steady stream of published states. **Duplicate Bridge Detected**, under
+the device's Diagnostic entities, should be **off** — see Troubleshooting.
 
 ## Pump switches (Task Mode only)
 
@@ -468,7 +470,7 @@ Photo Time are unaffected.
 ## Then set up the alerts
 
 This add-on delivers the data. The alerting — the notification script and the
-twenty-four automations — is pasted into the Home Assistant UI and is not part of
+twenty-five automations — is pasted into the Home Assistant UI and is not part of
 the add-on.
 
 Follow `README.md` in the repository, section **New install**, from step 3.
@@ -478,6 +480,46 @@ automations went unnoticed on the farm this was built for, until the farm hit
 81°F and nobody was told.
 
 ## Troubleshooting
+
+**Every entity keeps going unavailable / database growing fast** — two bridges
+on one MQTT broker. Usually the retired Windows bridge, still started by Task
+Scheduler on the farm PC, alongside this app. Bridges before 1.5.1 all used one
+client ID, and the broker allows one connection per ID, so each kicked the
+other off about once a second; every kick took every entity unavailable. On the
+farm this was built for, the database grew to 16.5 GB at ~10 million rows a day.
+
+Confirm it, any one of:
+
+- **Mosquitto broker** app → **Log**: the same line every second or so —
+  `Client farm-bridge already connected, closing old connection.`
+- **Duplicate Bridge Detected** is on. Its attributes say why: `other_host`
+  names the computer the other bridge runs on (blank if it never said),
+  `reason` is `instance` (the other bridge announced itself),
+  `foreign_offline` (the other bridge stopped and its Last Will set the farm
+  offline — the app sets it straight back online), `foreign_online` (a bridge
+  older than 1.5.1 connected: it set the farm online and never announced
+  itself) or `disconnects` (over 5 unexpected disconnects in 60 s). When one of the two bridges is this app,
+  only the app writes the sensor, so `other_host` is the other computer. The
+  automation `25-duplicate-bridge` sends a critical alert when it turns on.
+- The **Database health check** below shows thousands of rows an hour for
+  every entity.
+
+Fix: stop the other bridge. On a Windows PC, double-click
+`UNINSTALL-FARM-BRIDGE.bat` in the repository's `legacy/windows-installer/`
+(it lists what it removed), then check **Task Scheduler → Task Scheduler
+Library** for any task that still starts `farm_bridge.py` — `Greenery S Farm
+Bridge` or `FarmBridge`. On Linux: `sudo systemctl disable --now farm-bridge`.
+The sensor clears 10 minutes after the last sign of the other bridge; after
+`foreign_online`, 10 minutes after that bridge stops.
+
+Since 1.5.1 each bridge connects with its own client ID
+(`greenery-bridge-<farm>-<random>`, in the Log), so two bridges no longer kick
+each other off. Run together they are still a fault: every button and switch
+press from Home Assistant reaches the farm twice. A bridge older than 1.5.1
+never announces itself: this app sees it about 15 s after it connects
+(`foreign_online`) and holds the sensor on until it stops. It cannot see one
+that was already connected when this app started, nor one that reconnects in
+the same few seconds as this app after a broker restart.
 
 **"No MQTT broker found"** — install and *start* the Mosquitto broker add-on.
 Installing without starting is the usual cause.
@@ -510,6 +552,37 @@ until the module reports again.
   fixed in `farm_bridge.py` (`OUTPUT_DEVICE_ID`, this repository's farm), and
   the line always prints it. A farm whose Output Module has another ID never
   matches it: that farm's device map has not been set up.
+
+## Database health check
+
+How many rows each entity wrote to Home Assistant's database in the last hour:
+the quickest way to see whether something is flooding the recorder. Run it in
+the Terminal (the **Advanced SSH & Web Terminal** app). The query goes in a
+file because inline shell quoting breaks in the HA terminal.
+
+1. Save this as `/config/dbcheck4.sql` (File editor or Studio Code Server app):
+
+   ```
+   SELECT (SELECT entity_id FROM states_meta m WHERE m.metadata_id = t.metadata_id), t.c FROM (SELECT metadata_id, COUNT(*) AS c FROM states WHERE last_updated_ts > strftime('%s','now','-1 hour') GROUP BY metadata_id) t ORDER BY t.c DESC LIMIT 15;
+   ```
+
+2. Run, in the Terminal:
+
+   ```
+   apk add sqlite
+   mkdir -p /config/sqltmp
+   SQLITE_TMPDIR=/config/sqltmp sqlite3 -readonly /config/home-assistant_v2.db < /config/dbcheck4.sql > /config/dbcheck4.txt
+   ```
+
+   `-readonly` never changes the database. `SQLITE_TMPDIR` puts sqlite's
+   scratch files on the data disk, next to the database.
+
+3. Open `/config/dbcheck4.txt`: the 15 busiest entities, `entity_id|rows`.
+
+**Normal:** a few hundred rows an hour per sensor at most. **Thousands for
+every entity**, sensors and switches alike, means their availability is
+flapping — see *Every entity keeps going unavailable* under Troubleshooting.
+One entity far above the rest is that entity's own problem.
 
 ## Credit
 

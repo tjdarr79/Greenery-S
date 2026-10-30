@@ -21,26 +21,88 @@ Write-Host "   GREENERY S FARM BRIDGE - Uninstall" -ForegroundColor White
 Write-Host "  ============================================================" -ForegroundColor White
 Write-Host ""
 
-Write-Host "  Stopping the bridge..." -ForegroundColor Cyan
-try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
+# Left running beside the Home Assistant app, this bridge flooded a farm's
+# database (CHANGELOG 1.5.1). So remove every task that starts it: the one
+# INSTALL-FARM-BRIDGE.bat registers, "FarmBridge" from WINDOWS-INSTALL.md, and
+# any other whose action runs farm_bridge.py.
+$knownNames = @($taskName, "FarmBridge")
 
-Get-Process -Name "python", "py" -ErrorAction SilentlyContinue | ForEach-Object {
-    try {
-        $cmdline = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)").CommandLine
-        if ($cmdline -and $cmdline -like "*farm_bridge.py*") {
-            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-            Write-Host "    Stopped process $($_.Id)" -ForegroundColor Gray
-        }
-    } catch { }
+function Get-BridgeTasks {
+    @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
+        $task = $_
+        $actions = ($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join " "
+        ($knownNames -contains $task.TaskName) -or ($actions -match "farm_bridge|run-bridge\.cmd")
+    })
 }
 
+# By command line, not process name: python.exe, pythonw.exe and py.exe all
+# run it. Also matches a renamed farm_bridge.py.retired.
+function Get-BridgeProcesses {
+    @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -and $_.CommandLine -like "*farm_bridge.py*" -and $_.ProcessId -ne $PID
+    })
+}
+
+$removed = @()
+$stopped = @()
+
+# Tasks first: each restarts the bridge a minute after it stops.
 Write-Host "  Removing the startup task..." -ForegroundColor Cyan
-try {
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop
-    Write-Host "    OK   Startup task removed" -ForegroundColor Green
-} catch {
-    Write-Host "    NOTE No startup task found - nothing to remove" -ForegroundColor Yellow
+$tasks = Get-BridgeTasks
+foreach ($t in $tasks) {
+    $label = $t.TaskPath + $t.TaskName
+    try { Stop-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -ErrorAction SilentlyContinue } catch { }
+    try {
+        Unregister-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -Confirm:$false -ErrorAction Stop
+        $removed += $label
+        Write-Host "    OK   Removed task $label" -ForegroundColor Green
+    } catch {
+        Write-Host "    FAIL Could not remove task ${label}: $($_.Exception.Message)" -ForegroundColor Red
+    }
 }
+if ($tasks.Count -eq 0) {
+    Write-Host "    NOTE No farm bridge task found - nothing to remove" -ForegroundColor Yellow
+}
+
+Write-Host "  Stopping the bridge..." -ForegroundColor Cyan
+$procs = Get-BridgeProcesses
+foreach ($p in $procs) {
+    try {
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
+        $stopped += "$($p.Name) (process $($p.ProcessId))"
+        Write-Host "    OK   Stopped $($p.Name) (process $($p.ProcessId))" -ForegroundColor Green
+    } catch {
+        Write-Host "    FAIL Could not stop process $($p.ProcessId): $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+if ($procs.Count -eq 0) {
+    Write-Host "    NOTE No farm_bridge.py process running" -ForegroundColor Yellow
+}
+
+Start-Sleep -Seconds 2
+$leftTasks = Get-BridgeTasks
+$leftProcs = Get-BridgeProcesses
+
+Write-Host ""
+Write-Host "  ------------------------------------------------------------" -ForegroundColor White
+Write-Host "   What this did" -ForegroundColor White
+Write-Host "  ------------------------------------------------------------" -ForegroundColor White
+Write-Host ("    Tasks removed:     {0}" -f $removed.Count) -ForegroundColor White
+$removed | ForEach-Object { Write-Host "      $_" -ForegroundColor Gray }
+Write-Host ("    Bridges stopped:   {0}" -f $stopped.Count) -ForegroundColor White
+$stopped | ForEach-Object { Write-Host "      $_" -ForegroundColor Gray }
+if ($leftTasks.Count -or $leftProcs.Count) {
+    Write-Host ""
+    Write-Host "    STILL PRESENT - remove by hand:" -ForegroundColor Red
+    $leftTasks | ForEach-Object { Write-Host "      task    $($_.TaskPath)$($_.TaskName)" -ForegroundColor Red }
+    $leftProcs | ForEach-Object { Write-Host "      process $($_.ProcessId) $($_.CommandLine)" -ForegroundColor Red }
+} else {
+    Write-Host "    No farm bridge task or process is left on this PC." -ForegroundColor Green
+}
+Write-Host ""
+Write-Host "  Then check Task Scheduler yourself (Start > Task Scheduler >" -ForegroundColor White
+Write-Host "  Task Scheduler Library) for any other task that starts the" -ForegroundColor White
+Write-Host "  bridge, e.g. one created under another name." -ForegroundColor White
 
 Write-Host ""
 Write-Host "  The bridge will no longer start with Windows." -ForegroundColor White
