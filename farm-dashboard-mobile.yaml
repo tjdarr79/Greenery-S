@@ -14,6 +14,18 @@ views:
         icon: mdi:connection
 
       # -----------------------------------------------------------------
+      # FARM LOGO - optional. Upload the image as /config/www/farm-logo.png
+      # (File Editor -> www folder -> upload; restart Home Assistant once if
+      # the www folder is new). No logo: delete this card.
+      # -----------------------------------------------------------------
+      - type: picture
+        image: /local/farm-logo.png
+        tap_action:
+          action: none
+        hold_action:
+          action: none
+
+      # -----------------------------------------------------------------
       # ENVIRONMENTAL
       # -----------------------------------------------------------------
       - type: entities
@@ -30,8 +42,9 @@ views:
 
       # DOSING TANKS - farmhand shows these under air temp / RH / CO2.
       # OK, or Problem (red) when a tank is low. A dead or unplugged sensor
-      # ALSO reads OK - press Refilled after every refill, so the bridge can
-      # tell a working sensor from a silent one. See DOCS.md, "Dosing tank levels".
+      # ALSO reads OK: look at the tanks when you top them off. Refill tracking
+      # (Days Since Refill, Refilled buttons) is left off this card; see DOCS.md,
+      # "Dosing tank levels", to add it back.
       - type: entities
         title: Dosing Tanks
         icon: mdi:cup-water
@@ -75,80 +88,30 @@ views:
             row:
               entity: binary_sensor.greenery_s_farm_boost_ph_up_sensor_fault
               name: Boost / pH Up sensor unstable
-          - type: section
-            label: Days since refill
-          - entity: sensor.greenery_s_farm_nutrient_a_days_since_refill
-            name: Nutrient A
-          - entity: sensor.greenery_s_farm_nutrient_b_days_since_refill
-            name: Nutrient B
-          - entity: sensor.greenery_s_farm_ph_down_days_since_refill
-            name: pH Down
-          - entity: sensor.greenery_s_farm_boost_ph_up_days_since_refill
-            name: Boost / pH Up
 
-      # Refilled: one tap per tank, each confirmed.
+      # -----------------------------------------------------------------
+      # NURSERY CAMERAS - latest photo each (farmhand takes one every 3 h).
+      # Tap for full size. While this dashboard is open Home Assistant
+      # re-reads the photos every 10 s: close it when on cellular.
+      # -----------------------------------------------------------------
       - type: grid
-        columns: 4
+        columns: 2
         square: false
         cards:
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_nutrient_a_refilled
-            name: Nutrient A
-            icon: mdi:water-plus
+          - type: picture-entity
+            entity: camera.greenery_s_farm_nursery_top_camera
+            name: Nursery Top
+            show_state: false
             tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_nutrient_a_refilled
-              confirmation:
-                text: Nutrient A tank refilled? Resets its Days Since Refill to 0.
+              action: more-info
             hold_action:
               action: none
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_nutrient_b_refilled
-            name: Nutrient B
-            icon: mdi:water-plus
+          - type: picture-entity
+            entity: camera.greenery_s_farm_nursery_bottom_camera
+            name: Nursery Bottom
+            show_state: false
             tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_nutrient_b_refilled
-              confirmation:
-                text: Nutrient B tank refilled? Resets its Days Since Refill to 0.
-            hold_action:
-              action: none
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_ph_down_refilled
-            name: pH Down
-            icon: mdi:water-plus
-            tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_ph_down_refilled
-              confirmation:
-                text: pH Down tank refilled? Resets its Days Since Refill to 0.
-            hold_action:
-              action: none
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_boost_ph_up_refilled
-            name: Boost
-            icon: mdi:water-plus
-            tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_boost_ph_up_refilled
-              confirmation:
-                text: Boost / pH Up tank refilled? Resets its Days Since Refill to 0.
+              action: more-info
             hold_action:
               action: none
 
@@ -168,6 +131,48 @@ views:
             name: Water Temp
           - entity: sensor.greenery_s_farm_nursery_depth
             name: Tank Depth
+
+      # -----------------------------------------------------------------
+      # CULTIVATION CAMERAS, left to right - latest photo each (farmhand takes one every 3 h).
+      # Tap for full size. While this dashboard is open Home Assistant
+      # re-reads the photos every 10 s: close it when on cellular.
+      # -----------------------------------------------------------------
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: picture-entity
+            entity: camera.greenery_s_farm_cultivation_left_camera
+            name: Left
+            show_state: false
+            tap_action:
+              action: more-info
+            hold_action:
+              action: none
+          - type: picture-entity
+            entity: camera.greenery_s_farm_cultivation_left_middle_camera
+            name: Left Middle
+            show_state: false
+            tap_action:
+              action: more-info
+            hold_action:
+              action: none
+          - type: picture-entity
+            entity: camera.greenery_s_farm_cultivation_right_middle_camera
+            name: Right Middle
+            show_state: false
+            tap_action:
+              action: more-info
+            hold_action:
+              action: none
+          - type: picture-entity
+            entity: camera.greenery_s_farm_cultivation_right_camera
+            name: Right
+            show_state: false
+            tap_action:
+              action: more-info
+            hold_action:
+              action: none
 
       # -----------------------------------------------------------------
       # CULTIVATION

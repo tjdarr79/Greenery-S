@@ -36,7 +36,7 @@ REQUIRED = [
     "farm-alerts-script.yaml", "dashboard-controls.yaml",
     "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
-    "dashboard-cameras.yaml",
+    "dashboard-cameras.yaml", "dashboard-task-mode.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "tools/render-farm-yaml.py",
     "tools/farmhand/README.md", "tools/farmhand/dump_settings.py",
@@ -332,6 +332,16 @@ MARKERS = {
     "farm-dashboard-mobile.yaml": [
         ("title: Dosing Tanks", "Dosing Tanks card"),
         ("state_color: true", "low tank shown red"),
+        ("image: /local/farm-logo.png", "farm logo above Environmental"),
+        ("camera.greenery_s_farm_nursery_top_camera", "nursery cameras above Nursery"),
+        ("camera.greenery_s_farm_cultivation_right_camera", "cultivation cameras above Cultivation"),
+    ],
+    "dashboard-task-mode.yaml": [
+        ("button.press", "correct action - not automation.trigger"),
+        ("Put the farm in TASK MODE?", "Enter Task Mode confirmation"),
+        ("Return the farm to automatic recipe control?", "Return to Auto confirmation"),
+        ("title: Pump Status", "pump status card"),
+        ("Pumps (Task Mode only)", "pump switches card"),
     ],
     "automations/23-dosing-tank-alert.yaml": [
         ("topic: farm/dosing_tanks/alert", "listens on the bridge's alert topic"),
@@ -498,7 +508,8 @@ def main():
     # A switch shown without a confirmation toggles a pump on one pocket-tap.
     # Tiles also toggle on an ICON tap by default, so both actions need one.
     # A bare switch row in an entities card is a toggle with no confirmation.
-    for rel in ["dashboard-controls.yaml", "farm-dashboard.yaml", "farm-dashboard-mobile.yaml"]:
+    for rel in ["dashboard-controls.yaml", "dashboard-task-mode.yaml",
+                "farm-dashboard.yaml", "farm-dashboard-mobile.yaml"]:
         p = root / rel
         try:
             doc = yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))
@@ -533,11 +544,13 @@ def main():
         if presses:
             check(not unconfirmed, f"{rel}: every button press asks for confirmation",
                   ", ".join(unconfirmed))
-        if rel != "dashboard-controls.yaml" and dosing_names:
+        # Farm dashboards must show every tank's level and sensor fault. Refill
+        # tracking (Days Since Refill, Refilled) is optional: farms that top the
+        # tanks off daily leave it off the phone dashboard.
+        if rel in ("farm-dashboard.yaml", "farm-dashboard-mobile.yaml") and dosing_names:
             for name in dosing_names:
                 base = "greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-                for ent in (f"binary_sensor.{base}_level", f"binary_sensor.{base}_sensor_fault",
-                            f"sensor.{base}_days_since_refill", f"button.{base}_refilled"):
+                for ent in (f"binary_sensor.{base}_level", f"binary_sensor.{base}_sensor_fault"):
                     check(ent in text, f"{rel}: {ent}")
         if n or bare:
             check(not unguarded and not bare,

@@ -201,8 +201,9 @@ carry `confirmation:` or a pocket-tap will stop the farm.
 | `automations/01`–`25` | Alert automations, pasted into HA one at a time |
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard, with the Dosing Tanks card under Environmental |
-| `farm-dashboard-mobile.yaml` | Phone dashboard, the same cards stacked |
+| `farm-dashboard-mobile.yaml` | Phone dashboard, the same cards stacked, with the farm logo and the latest camera photos above Nursery and Cultivation |
 | `dashboard-controls.yaml` | Control card: Cool-Down, Task Mode, the Task-Mode-only pump switches, 24-hour settings, a button to the Cameras view |
+| `dashboard-task-mode.yaml` | Standalone phone dashboard: Task Mode status, Enter/Return buttons, every pump's relay state, pump switches (shown only in Task Mode) |
 | `dashboard-cameras.yaml` | Cameras card: the latest photo from each of the six cameras, for its own view |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |

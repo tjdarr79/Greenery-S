@@ -46,6 +46,7 @@ ROOT_FILES = [
     "farm-alerts-script.yaml", "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "dashboard-controls.yaml", "dashboard-cameras.yaml",
+    "dashboard-task-mode.yaml",
 ]
 
 ENTITY_REF = re.compile(r"\b([a-z_]+)\." + LEGACY_SLUG + r"_")
