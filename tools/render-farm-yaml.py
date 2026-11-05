@@ -49,6 +49,11 @@ ROOT_FILES = [
     "dashboard-task-mode.yaml",
 ]
 
+# dashboard-cooldown.yaml is deliberately NOT here. It is the owner's farm's
+# own Cool-Down card, offered to another farm only if they ask - see
+# dashboard-cooldown.yaml's own header. Render it for a specific farm by
+# adding it to a one-off copy of this list, not by changing the default.
+
 ENTITY_REF = re.compile(r"\b([a-z_]+)\." + LEGACY_SLUG + r"_")
 DASHBOARD_TITLE = re.compile(r"^(title:[ \t]*)" + re.escape(LEGACY_FARM_NAME) + r"(.*)$",
                              re.MULTILINE)

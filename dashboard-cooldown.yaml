@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# COOL-DOWN CARD - owner's farm only. NOT in render-farm-yaml.py's ROOT_FILES,
+# so a new farm does not get this by default. Offer it to a customer only if
+# they ask, and paste it manually for that farm (run render-farm-yaml.py with
+# this file alongside the others, or hand-edit the entity prefix).
+#
+# Extracted out of dashboard-controls.yaml 2026-11-05 so the shared Controls
+# card stays generic; this one card stayed owner-specific the whole time, per
+# the decision in cool-down-mode.md - it just hadn't been physically split
+# into its own file yet.
+#
+# Add via Dashboard -> Edit -> Add Card -> Manual, then paste this block.
+#
+# Start Cool-Down puts the farm in Task Mode, then switches relays 1 and 8
+# back on (cultivation recirc, nursery recirc + chiller pump). End Cool-Down
+# exits Task Mode; the recipe resumes and runs both on auto. Phone only, never
+# for cleanouts - see README, "Cool-Down (phone only)".
+#
+# `confirmation:` is not optional here: nested inside tap_action, same as
+# everywhere else manual control can stop or start equipment.
+# ---------------------------------------------------------------------------
+
+type: vertical-stack
+title: Cool-Down
+cards:
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: button
+        show_name: true
+        show_icon: true
+        entity: button.greenery_s_farm_start_cool_down
+        name: Start Cool-Down
+        icon: mdi:snowflake-thermometer
+        tap_action:
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.greenery_s_farm_start_cool_down
+          confirmation:
+            text: Stop grow lights and start cool-down?
+
+      - type: button
+        show_name: true
+        show_icon: true
+        entity: button.greenery_s_farm_end_cool_down
+        name: End Cool-Down
+        icon: mdi:play-circle
+        tap_action:
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.greenery_s_farm_end_cool_down
+          confirmation:
+            text: End cool-down and resume the recipe?
+
+  - type: entities
+    show_header_toggle: false
+    entities:
+      - entity: binary_sensor.greenery_s_farm_cool_down_active
+        name: Cool-Down active
+      - entity: binary_sensor.greenery_s_farm_cool_down_fault
+        name: Cool-Down fault

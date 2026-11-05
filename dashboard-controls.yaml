@@ -1,5 +1,7 @@
 # ---------------------------------------------------------------------------
-# TASK MODE CONTROL CARD
+# CONTROLS CARD - generic, shipped to every farm via render-farm-yaml.py.
+# Farm-specific controls (Cool-Down) live in their own file, not here - see
+# dashboard-cooldown.yaml.
 #
 # Add via Dashboard -> Edit -> Add Card -> Manual, then paste this block.
 #
@@ -16,14 +18,16 @@
 # Entity IDs carry the device prefix. The doubled "farm" in the status sensor
 # is correct: device "Greenery S Farm" + entity "Farm Control Status".
 #
-# "Cool-Down" comes first: it is the control used under stress, when the farm
-# is running hot. Phone only, never for cleanouts - see README, "Cool-Down".
+# Task Mode comes first: it is the control most likely to be reached for
+# under stress, and "Key Equipment" right under it is what its buttons affect
+# - watch these change when you press.
 #
-# "Pumps (Task Mode only)" switches single pumps and is kept apart from the
-# Task Mode buttons. Its switches are unavailable unless the farm is in Task
-# Mode. "24-Hour Settings" writes farmhand's own 24-hour flags and works in
-# auto. To put any card elsewhere, cut its block into its own Manual card and
-# remove its leading indentation.
+# "Pumps (Task Mode only)" and "Exhaust Fan (Task Mode only)" switch single
+# outputs and are kept apart from the Task Mode buttons themselves. Their
+# switches are unavailable unless the farm is in Task Mode. "24-Hour
+# Settings" writes farmhand's own 24-hour flags and works in auto. To put any
+# card elsewhere, cut its block into its own Manual card and remove its
+# leading indentation.
 #
 # The Cameras button at the bottom opens the Cameras view - set up from
 # dashboard-cameras.yaml.
@@ -36,51 +40,6 @@
 
 type: vertical-stack
 cards:
-  # Lights off, recirc and chiller pump kept running. The bridge confirms each
-  # step from the relays; the result shows in "Last command" below.
-  - type: vertical-stack
-    title: Cool-Down
-    cards:
-      - type: grid
-        columns: 2
-        square: false
-        cards:
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_start_cool_down
-            name: Start Cool-Down
-            icon: mdi:snowflake-thermometer
-            tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_start_cool_down
-              confirmation:
-                text: Stop grow lights and start cool-down?
-
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_end_cool_down
-            name: End Cool-Down
-            icon: mdi:play-circle
-            tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_end_cool_down
-              confirmation:
-                text: End cool-down and resume the recipe?
-
-      - type: entities
-        show_header_toggle: false
-        entities:
-          - entity: binary_sensor.greenery_s_farm_cool_down_active
-            name: Cool-Down active
-          - entity: binary_sensor.greenery_s_farm_cool_down_fault
-            name: Cool-Down fault
-
   - type: button
     show_name: true
     show_icon: true
@@ -134,6 +93,8 @@ cards:
         name: HVAC Cooling
       - entity: binary_sensor.greenery_s_farm_co2_regulator
         name: CO2 Regulator
+      - entity: binary_sensor.greenery_s_farm_exhaust_fan
+        name: Exhaust Fan
 
   # Task Mode only. Result of each press shows in "Last command" above:
   # CONFIRMED is read back from the relay, not from farmhand's reply.
@@ -196,6 +157,28 @@ cards:
           action: toggle
           confirmation:
             text: Turn Nursery Recirc and Chiller Pump on/off? Off stops chiller flow.
+        hold_action:
+          action: none
+
+  # Owner-confirmed 2026-11-05 (ch12). Task Mode only, same as the pumps:
+  # manual_action bypasses whatever the recipe/HVAC logic is doing with this
+  # fan while the farm is in Auto.
+  - type: grid
+    title: Exhaust Fan (Task Mode only)
+    columns: 1
+    square: false
+    cards:
+      - type: tile
+        entity: switch.greenery_s_farm_exhaust_fan_switch
+        name: Exhaust Fan
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Turn the Exhaust Fan on/off?
+        icon_tap_action:
+          action: toggle
+          confirmation:
+            text: Turn the Exhaust Fan on/off?
         hold_action:
           action: none
 

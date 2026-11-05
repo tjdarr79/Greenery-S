@@ -37,6 +37,7 @@ REQUIRED = [
     "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "dashboard-cameras.yaml", "dashboard-task-mode.yaml",
+    "dashboard-cooldown.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "tools/render-farm-yaml.py",
     "tools/farmhand/README.md", "tools/farmhand/dump_settings.py",
@@ -310,13 +311,20 @@ MARKERS = {
     "dashboard-controls.yaml": [
         ("confirmation:", "confirmation guard"),
         ("button.press", "correct action - not automation.trigger"),
+        ("EMERGENCY — Task Mode", "Task Mode button is first on the card"),
         ("Pumps (Task Mode only)", "pump switches card"),
-        ("title: Cool-Down", "Cool-Down card"),
-        ("Stop grow lights and start cool-down?", "Start Cool-Down confirmation"),
-        ("End cool-down and resume the recipe?", "End Cool-Down confirmation"),
+        ("title: Exhaust Fan (Task Mode only)", "exhaust fan switch card"),
+        ("Turn the Exhaust Fan on/off?", "Exhaust Fan confirmation"),
         ("title: 24-Hour Settings", "24-hour settings card"),
         ("sensor.greenery_s_farm_farmhand_version", "farmhand version on the card"),
         ("navigation_path: farm-cameras", "button to the Cameras view"),
+    ],
+    "dashboard-cooldown.yaml": [
+        ("confirmation:", "confirmation guard"),
+        ("button.press", "correct action - not automation.trigger"),
+        ("title: Cool-Down", "Cool-Down card"),
+        ("Stop grow lights and start cool-down?", "Start Cool-Down confirmation"),
+        ("End cool-down and resume the recipe?", "End Cool-Down confirmation"),
     ],
     "dashboard-cameras.yaml": [
         ("type: picture-entity", "camera photo cards"),
@@ -509,6 +517,7 @@ def main():
     # Tiles also toggle on an ICON tap by default, so both actions need one.
     # A bare switch row in an entities card is a toggle with no confirmation.
     for rel in ["dashboard-controls.yaml", "dashboard-task-mode.yaml",
+                "dashboard-cooldown.yaml",
                 "farm-dashboard.yaml", "farm-dashboard-mobile.yaml"]:
         p = root / rel
         try:

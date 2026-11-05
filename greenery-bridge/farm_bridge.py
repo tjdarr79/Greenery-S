@@ -227,7 +227,13 @@ TASK_MODE_EXCLUDE = {23}
 # Mode. A channel is added here only after it has been physically tested
 # switching on AND off. See README, "Pump switches (Task Mode only)".
 #   1, 2, 3: 2026-09-25    8: 2026-10-16 (capture tool: only output_8 moved)
-MANUAL_CONTROL_CHANNELS = (1, 2, 3, 8)
+#   12 (Exhaust Fan): owner-confirmed 2026-11-05 - no capture-tool log on file;
+#   if that run is ever repeated, record it here the same way as 1/2/3/8.
+MANUAL_CONTROL_CHANNELS = (1, 2, 3, 8, 12)
+
+# Icon shown on each manual-control switch. Falls back to mdi:pump - right for
+# every current channel except the fan.
+MANUAL_CONTROL_ICONS = {12: "mdi:fan"}
 
 # Checked on every start. An explicit raise, not assert: python -O strips those.
 if (set(MANUAL_CONTROL_CHANNELS) & TASK_MODE_EXCLUDE
@@ -695,7 +701,7 @@ def publish_switch_discovery(client, availability_topic: str):
                     {"topic": MANUAL_CONTROL_AVAILABLE_TOPIC},
                 ],
                 "availability_mode": "all",
-                "icon": "mdi:pump",
+                "icon": MANUAL_CONTROL_ICONS.get(ch, "mdi:pump"),
                 "device": DEVICE_INFO,
             }),
             qos=1, retain=True,

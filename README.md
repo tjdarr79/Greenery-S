@@ -180,13 +180,18 @@ Both carry a **Dosing Tanks** card under Environmental, with the four
 
 ### 6. Optional — Task Mode control
 
-`dashboard-controls.yaml` adds a **Cool-Down** card at the top, Enter/Exit
-Task Mode buttons with confirmation guards, a separate **Pumps (Task Mode
-only)** card, a **24-Hour Settings** card, and a **Cameras** button that
-opens the Cameras view. Read **Task Mode control**,
-**Pump switches (Task Mode only)**, **Cool-Down (phone only)** and **24-hour
-settings switches** first: the commands are undocumented, and every card must
-carry `confirmation:` or a pocket-tap will stop the farm.
+`dashboard-controls.yaml` is the **Controls** card: Enter/Exit Task Mode
+buttons with confirmation guards first, then **Key Equipment** status, a
+**Pumps (Task Mode only)** card, an **Exhaust Fan (Task Mode only)** card, a
+**24-Hour Settings** card, and a **Cameras** button that opens the Cameras
+view. Read **Task Mode control**, **Pump switches (Task Mode only)** and
+**24-hour settings switches** first: the commands are undocumented, and every
+card must carry `confirmation:` or a pocket-tap will stop the farm.
+
+`dashboard-cooldown.yaml` is the **Cool-Down** card - separate on purpose.
+It's the owner's own farm's routine (see **Cool-Down (phone only)**), not
+part of the standard set `render-farm-yaml.py` writes for a new farm. Offer
+it to a customer only if they ask.
 
 ---
 
@@ -202,8 +207,9 @@ carry `confirmation:` or a pocket-tap will stop the farm.
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard, with the Dosing Tanks card under Environmental |
 | `farm-dashboard-mobile.yaml` | Phone dashboard, the same cards stacked, with the farm logo and the latest camera photos above Nursery and Cultivation |
-| `dashboard-controls.yaml` | Control card: Cool-Down, Task Mode, the Task-Mode-only pump switches, 24-hour settings, a button to the Cameras view |
+| `dashboard-controls.yaml` | Controls card: Task Mode first, Key Equipment, the Task-Mode-only pump switches, the Task-Mode-only exhaust fan switch, 24-hour settings, a button to the Cameras view |
 | `dashboard-task-mode.yaml` | Standalone phone dashboard: Task Mode status, Enter/Return buttons, every pump's relay state, pump switches (shown only in Task Mode) |
+| `dashboard-cooldown.yaml` | Cool-Down card - owner's farm only, not in `render-farm-yaml.py`'s default set |
 | `dashboard-cameras.yaml` | Cameras card: the latest photo from each of the six cameras, for its own view |
 | `tools/dump-relay.py` | Diagnostic — inspect the raw output board |
 | `tools/discover-farmhand-api.py` | Diagnostic — re-find the control endpoint after a farmhand update |
@@ -635,8 +641,9 @@ That path is fully supported and does not depend on any of this.
 
 ## Pump switches (Task Mode only)
 
-Four switches, published by the bridge over MQTT discovery, turn single pumps
-on and off — for a tank cleanout, without walking to the farmhand screen.
+Five switches, published by the bridge over MQTT discovery, turn single
+outputs on and off — for a tank cleanout or ventilation, without walking to
+the farmhand screen.
 
 | Entity | Relay channel | Tested |
 |---|---|---|
@@ -644,6 +651,7 @@ on and off — for a tank cleanout, without walking to the farmhand screen.
 | `switch.greenery_s_farm_left_send_pump_switch` | 2 — Left Send Pump | 2026-09-25 |
 | `switch.greenery_s_farm_right_send_pump_switch` | 3 — Right Send Pump | 2026-09-25 |
 | `switch.greenery_s_farm_nursery_recirc_and_chiller_pump_switch` | 8 — Nursery Recirc and Chiller Pump | 2026-10-16 |
+| `switch.greenery_s_farm_exhaust_fan_switch` | 12 — Exhaust Fan | 2026-11-05 (owner-confirmed; no capture-tool log on file - see **Adding a channel** before trusting this one past the next acceptance pass) |
 
 Channel 8 also powers the chiller pump: switching it off stops the chiller's
 water flow.
@@ -760,6 +768,10 @@ manual after an exit, `Task Mode Active` stays on, **Exit Task Mode** reports
 `12-task-mode-left-on` pages after 6 hours.
 
 ## Cool-Down (phone only)
+
+Card: `dashboard-cooldown.yaml` - owner's farm only, not part of the set
+`render-farm-yaml.py` writes for a new farm. Offer it to a customer only if
+they ask (see that file's own header for how to render it for one anyway).
 
 When the farm runs hot in the day: one tap stops the grow lights and keeps
 water moving through the chiller. **Start Cool-Down** puts the farm in Task
