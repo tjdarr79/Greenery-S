@@ -1,0 +1,8 @@
+# Development only: tests/ and tools/. Never installed on a farm.
+# Farms install requirements.txt (bare metal) or greenery-bridge/requirements.txt
+# (app image) - keep PyYAML and pytest out of both; farm_bridge.py does not use them.
+#
+#   pip install -r requirements-dev.txt
+-r requirements.txt
+pytest>=7.0
+pyyaml>=6.0

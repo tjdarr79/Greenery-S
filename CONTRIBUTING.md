@@ -23,7 +23,7 @@ customer farm sees an update only when `stable` moves.
 
 1. Branch from `main`. Make the change.
 2. `python tools/verify-repo.py` must print `ALL CHECKS PASSED`, and
-   `pytest -q tests` must pass (needs `pip install -r requirements.txt pytest`).
+   `pytest -q tests` must pass (needs `pip install -r requirements-dev.txt`).
 3. If the change should reach the dev farm, bump `version:` in
    `greenery-bridge/config.yaml` — without a bump Home Assistant does not
    offer the update, not even to your own farm:

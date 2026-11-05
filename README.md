@@ -221,7 +221,7 @@ it to a customer only if they ask.
 | `tools/verify-repo.py` | **Run after any merge** — confirms the clone is complete and correct |
 | `tools/render-farm-yaml.py` | Writes a farm's own copy of every automation and dashboard, for any farm name other than the default |
 | `tools/farmhand/` | Run-by-hand farmhand scripts: read-only dumps of settings and camera photos, a read-only dosing tank level check, an HVAC logger, and the 24-hour switch for when HA is down — see its README |
-| `tests/` | `pytest -q tests` — the dosing tank logic, and the camera code against real farmhand captures in `tests/fixtures/farmhand/`. Without pytest, the dosing tests alone: `python -m unittest discover -s tests -p "test_dosing*.py" -q` |
+| `tests/` | `pip install -r requirements-dev.txt`, then `pytest -q tests` — the dosing tank logic, and the camera code against real farmhand captures in `tests/fixtures/farmhand/`. Without pytest, the dosing tests alone: `python -m unittest discover -s tests -p "test_dosing*.py" -q` |
 | `greenery-bridge/` | **The Home Assistant app** — how the bridge is installed |
 | `repository.yaml` | Makes this repo installable as an HA add-on repository |
 | `CONTRIBUTING.md` | Branches and releases: `main` for development, `stable` for customer farms |

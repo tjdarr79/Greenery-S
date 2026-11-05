@@ -34,7 +34,7 @@ except ImportError:
 CONTROLS_CARD_CHANNELS = {12}
 
 REQUIRED = [
-    "README.md", "LICENSE", "requirements.txt",
+    "README.md", "LICENSE", "requirements.txt", "requirements-dev.txt",
     "CONTRIBUTING.md",
     "farm_bridge.py", "farm-bridge.env.example", "farm-bridge.service",
     "farm-alerts-script.yaml", "dashboard-controls.yaml",
