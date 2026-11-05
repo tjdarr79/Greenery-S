@@ -29,6 +29,10 @@ except ImportError:
 # Expected state
 # ---------------------------------------------------------------------------
 
+# Output switches that belong on the Controls card; every other switchable
+# channel (the pumps) belongs on the Task Mode dashboard.
+CONTROLS_CARD_CHANNELS = {12}
+
 REQUIRED = [
     "README.md", "LICENSE", "requirements.txt",
     "CONTRIBUTING.md",
@@ -37,6 +41,7 @@ REQUIRED = [
     "watchdog-helpers.yaml",
     "farm-dashboard.yaml", "farm-dashboard-mobile.yaml",
     "dashboard-cameras.yaml", "dashboard-task-mode.yaml",
+    "dashboard-cooldown.yaml",
     "tools/README.md", "tools/dump-relay.py", "tools/discover-farmhand-api.py",
     "tools/render-farm-yaml.py",
     "tools/farmhand/README.md", "tools/farmhand/dump_settings.py",
@@ -310,13 +315,18 @@ MARKERS = {
     "dashboard-controls.yaml": [
         ("confirmation:", "confirmation guard"),
         ("button.press", "correct action - not automation.trigger"),
-        ("Pumps (Task Mode only)", "pump switches card"),
+        ("EMERGENCY — Task Mode", "Task Mode button is first on the card"),
+        ("Return the farm to automatic recipe control?", "Return to Auto confirmation"),
+        ("title: Exhaust Fan (Task Mode only)", "exhaust fan switch card"),
+        ("Turn the Exhaust Fan on/off?", "Exhaust Fan confirmation"),
+        ("title: 24-Hour Settings", "24-hour settings card"),
+    ],
+    "dashboard-cooldown.yaml": [
+        ("confirmation:", "confirmation guard"),
+        ("button.press", "correct action - not automation.trigger"),
         ("title: Cool-Down", "Cool-Down card"),
         ("Stop grow lights and start cool-down?", "Start Cool-Down confirmation"),
         ("End cool-down and resume the recipe?", "End Cool-Down confirmation"),
-        ("title: 24-Hour Settings", "24-hour settings card"),
-        ("sensor.greenery_s_farm_farmhand_version", "farmhand version on the card"),
-        ("navigation_path: farm-cameras", "button to the Cameras view"),
     ],
     "dashboard-cameras.yaml": [
         ("type: picture-entity", "camera photo cards"),
@@ -508,7 +518,9 @@ def main():
     # A switch shown without a confirmation toggles a pump on one pocket-tap.
     # Tiles also toggle on an ICON tap by default, so both actions need one.
     # A bare switch row in an entities card is a toggle with no confirmation.
+    dash_text = {}
     for rel in ["dashboard-controls.yaml", "dashboard-task-mode.yaml",
+                "dashboard-cooldown.yaml",
                 "farm-dashboard.yaml", "farm-dashboard-mobile.yaml"]:
         p = root / rel
         try:
@@ -516,6 +528,7 @@ def main():
         except (OSError, yaml.YAMLError):
             continue   # reported by the parse checks
         text = p.read_text(encoding="utf-8", errors="replace")
+        dash_text[rel] = text
         bare, unguarded, n = [], [], 0
         presses, unconfirmed = 0, []
 
@@ -556,15 +569,35 @@ def main():
             check(not unguarded and not bare,
                   f"{rel}: every switch tap and icon tap asks for confirmation",
                   ", ".join(unguarded + bare))
-        if rel == "dashboard-controls.yaml" and output_map:
-            for ch in allowed:
-                name = output_map[ch][0]
-                ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") + "_switch"
-                check(ent in text, f"{rel}: tile for ch{ch} {name}", f"expected {ent}")
         if rel == "dashboard-controls.yaml":
             for name, _icon, _pair in fh24_switches.values():
                 ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
                 check(ent in text, f"{rel}: tile for {name}", f"expected {ent}")
+            # Controls only - cameras live on the main mobile dashboard. A
+            # camera entity or a link to the Cameras view sneaking back in
+            # here is the decision from 2026-11-05 getting undone.
+            check("camera." not in text and "farm-cameras" not in text,
+                  f"{rel}: no cameras - they live on farm-dashboard-mobile.yaml")
+
+    # Every switchable channel has a tile somewhere: pumps on the Task Mode
+    # dashboard, the exhaust fan on Controls. Controls carries exactly what the
+    # owner asked for (2026-11-05): Task Mode, Exhaust Fan, the three 24-hour
+    # switches. No pump switches, status or equipment rows there.
+    if output_map:
+        controls = dash_text.get("dashboard-controls.yaml", "")
+        task_mode = dash_text.get("dashboard-task-mode.yaml", "")
+        for ch in allowed:
+            name = output_map[ch][0]
+            ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") + "_switch"
+            where = "dashboard-controls.yaml" if ch in CONTROLS_CARD_CHANNELS else "dashboard-task-mode.yaml"
+            check(ent in dash_text.get(where, ""), f"{where}: tile for ch{ch} {name}", f"expected {ent}")
+        extra = sorted(set(re.findall(r"(switch\.greenery_s_farm_[a-z0-9_]+_switch)", controls))
+                       - {"switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", output_map[ch][0].lower()).strip("_") + "_switch"
+                          for ch in CONTROLS_CARD_CHANNELS if ch in output_map})
+        check(not extra, "dashboard-controls.yaml: no output switches beyond the exhaust fan", ", ".join(extra))
+        for unwanted in ("sensor.greenery_s_farm_farm_control_status", "title: Key Equipment",
+                         "Pumps (Task Mode only)"):
+            check(unwanted not in controls, f"dashboard-controls.yaml: nothing extra ({unwanted})")
 
     print("\n--- Cameras: latest photo only ---")
     # The owner chose no photo history: nothing on disk, ever. A file write in

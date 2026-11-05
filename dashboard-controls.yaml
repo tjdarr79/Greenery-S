@@ -1,9 +1,17 @@
 # ---------------------------------------------------------------------------
-# TASK MODE CONTROL CARD
+# CONTROLS CARD - generic, shipped to every farm via render-farm-yaml.py.
+# Exactly four controls, nothing else (owner decision 2026-11-05):
+#   Task Mode (Enter / Return to Auto), Exhaust Fan, and the three 24-hour
+#   settings (Nursery Top, Nursery Bottom, Cultivation Watering).
+# Status, pump switches and Key Equipment are on the Task Mode dashboard
+# (dashboard-task-mode.yaml); Cool-Down is in dashboard-cooldown.yaml; camera
+# photos are on the main mobile dashboard. Add to this card only on request.
 #
-# Add via Dashboard -> Edit -> Add Card -> Manual, then paste this block.
+# To use as its own dashboard: Settings -> Dashboards -> Add dashboard ->
+# "New dashboard from scratch", name it "Controls", open it -> pencil ->
+# Add Card -> Manual, then paste this block.
 #
-# TWO THINGS THAT WILL BITE YOU
+# THREE THINGS THAT WILL BITE YOU
 #
 # 1. `confirmation:` is not optional. Without it a mis-tap on a phone in your
 #    pocket stops the farm. It is nested INSIDE tap_action.
@@ -13,74 +21,18 @@
 #    `button` entity needs `perform_action: button.press` with an explicit
 #    target.entity_id, exactly as written below.
 #
-# Entity IDs carry the device prefix. The doubled "farm" in the status sensor
-# is correct: device "Greenery S Farm" + entity "Farm Control Status".
-#
-# "Cool-Down" comes first: it is the control used under stress, when the farm
-# is running hot. Phone only, never for cleanouts - see README, "Cool-Down".
-#
-# "Pumps (Task Mode only)" switches single pumps and is kept apart from the
-# Task Mode buttons. Its switches are unavailable unless the farm is in Task
-# Mode. "24-Hour Settings" writes farmhand's own 24-hour flags and works in
-# auto. To put any card elsewhere, cut its block into its own Manual card and
-# remove its leading indentation.
-#
-# The Cameras button at the bottom opens the Cameras view - set up from
-# dashboard-cameras.yaml.
-#
 # 3. A tile toggles its switch on an ICON tap by default - with no
 #    confirmation. Every switch tile therefore sets icon_tap_action as well as
 #    tap_action, both with `confirmation:`, and hold_action: none. Keep all
 #    three when editing; verify-repo.py checks the first two.
+#
+# "Exhaust Fan (Task Mode only)" is unavailable unless the farm is in Task
+# Mode; leaving Task Mode returns the fan to farmhand's control. "24-Hour
+# Settings" writes farmhand's own 24-hour flags and works in auto.
 # ---------------------------------------------------------------------------
 
 type: vertical-stack
 cards:
-  # Lights off, recirc and chiller pump kept running. The bridge confirms each
-  # step from the relays; the result shows in "Last command" below.
-  - type: vertical-stack
-    title: Cool-Down
-    cards:
-      - type: grid
-        columns: 2
-        square: false
-        cards:
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_start_cool_down
-            name: Start Cool-Down
-            icon: mdi:snowflake-thermometer
-            tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_start_cool_down
-              confirmation:
-                text: Stop grow lights and start cool-down?
-
-          - type: button
-            show_name: true
-            show_icon: true
-            entity: button.greenery_s_farm_end_cool_down
-            name: End Cool-Down
-            icon: mdi:play-circle
-            tap_action:
-              action: perform-action
-              perform_action: button.press
-              target:
-                entity_id: button.greenery_s_farm_end_cool_down
-              confirmation:
-                text: End cool-down and resume the recipe?
-
-      - type: entities
-        show_header_toggle: false
-        entities:
-          - entity: binary_sensor.greenery_s_farm_cool_down_active
-            name: Cool-Down active
-          - entity: binary_sensor.greenery_s_farm_cool_down_fault
-            name: Cool-Down fault
-
   - type: button
     show_name: true
     show_icon: true
@@ -109,93 +61,24 @@ cards:
       confirmation:
         text: Return the farm to automatic recipe control?
 
-  # The status line is not decoration. It is how you know a press actually
-  # took effect - the bridge verifies against the output board's own mode
-  # field rather than trusting the HTTP 200.
-  - type: entities
-    title: Farm Control
-    show_header_toggle: false
-    entities:
-      - entity: sensor.greenery_s_farm_farm_control_status
-        name: Last command
-      - entity: binary_sensor.greenery_s_farm_task_mode_active
-        name: Task mode
-
-  # Equipment the buttons affect. Watch these change when you press.
-  - type: entities
-    title: Key Equipment
-    show_header_toggle: false
-    entities:
-      - entity: binary_sensor.greenery_s_farm_cultivation_recirc_pump
-        name: Cultivation Recirc
-      - entity: binary_sensor.greenery_s_farm_nursery_recirc_and_chiller_pump
-        name: Nursery Recirc + Chiller
-      - entity: binary_sensor.greenery_s_farm_hvac_cooling
-        name: HVAC Cooling
-      - entity: binary_sensor.greenery_s_farm_co2_regulator
-        name: CO2 Regulator
-
-  # Task Mode only. Result of each press shows in "Last command" above:
-  # CONFIRMED is read back from the relay, not from farmhand's reply.
+  # Task Mode only: unavailable in Auto. Leaving Task Mode returns the
+  # fan to farmhand's control.
   - type: grid
-    title: Pumps (Task Mode only)
+    title: Exhaust Fan (Task Mode only)
     columns: 1
     square: false
     cards:
       - type: tile
-        entity: switch.greenery_s_farm_cultivation_recirc_pump_switch
-        name: Cultivation Recirc Pump
+        entity: switch.greenery_s_farm_exhaust_fan_switch
+        name: Exhaust Fan
         tap_action:
           action: toggle
           confirmation:
-            text: Turn Cultivation Recirc Pump on/off?
+            text: Turn the Exhaust Fan on/off?
         icon_tap_action:
           action: toggle
           confirmation:
-            text: Turn Cultivation Recirc Pump on/off?
-        hold_action:
-          action: none
-
-      - type: tile
-        entity: switch.greenery_s_farm_left_send_pump_switch
-        name: Left Send Pump
-        tap_action:
-          action: toggle
-          confirmation:
-            text: Turn Left Send Pump on/off?
-        icon_tap_action:
-          action: toggle
-          confirmation:
-            text: Turn Left Send Pump on/off?
-        hold_action:
-          action: none
-
-      - type: tile
-        entity: switch.greenery_s_farm_right_send_pump_switch
-        name: Right Send Pump
-        tap_action:
-          action: toggle
-          confirmation:
-            text: Turn Right Send Pump on/off?
-        icon_tap_action:
-          action: toggle
-          confirmation:
-            text: Turn Right Send Pump on/off?
-        hold_action:
-          action: none
-
-      # Also carries the chiller pump: off means the chiller loses flow.
-      - type: tile
-        entity: switch.greenery_s_farm_nursery_recirc_and_chiller_pump_switch
-        name: Nursery Recirc + Chiller Pump
-        tap_action:
-          action: toggle
-          confirmation:
-            text: Turn Nursery Recirc and Chiller Pump on/off? Off stops chiller flow.
-        icon_tap_action:
-          action: toggle
-          confirmation:
-            text: Turn Nursery Recirc and Chiller Pump on/off? Off stops chiller flow.
+            text: Turn the Exhaust Fan on/off?
         hold_action:
           action: none
 
@@ -247,19 +130,3 @@ cards:
             text: Change 24-hour watering for BOTH cultivation send pumps?
         hold_action:
           action: none
-
-      - type: tile
-        entity: sensor.greenery_s_farm_farmhand_version
-        name: farmhand version
-
-  # Opens the Cameras view (dashboard-cameras.yaml), kept off this view so six
-  # photos never slow it on a phone. A relative path: works when the Cameras
-  # view, URL farm-cameras, is in the same dashboard as this card.
-  - type: button
-    show_name: true
-    show_icon: true
-    name: Cameras
-    icon: mdi:cctv
-    tap_action:
-      action: navigate
-      navigation_path: farm-cameras

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.5.2
+
+Exhaust Fan (ch12) added to the manual-control switches, and the Controls
+card restructured.
+
+- **`MANUAL_CONTROL_CHANNELS` gains ch12** (Exhaust Fan). Owner-confirmed
+  2026-11-05; no capture-tool log is on file for it the way ch1/2/3/8 have
+  one - treat the next on/off pass from Home Assistant itself as the real
+  acceptance test (see README, "Adding a channel").
+- **`dashboard-controls.yaml` (Controls card) cut down to exactly four
+  controls**: Enter Task Mode / Return to Auto, a new **Exhaust Fan (Task Mode
+  only)** switch, and the three 24-hour switches. Status, Key Equipment, the
+  pump switches, the farmhand version and the Cameras button are gone from it
+  (status and pumps are on the Task Mode dashboard). `verify-repo.py` now
+  fails if anything else is added to it, and checks the pump switches are on
+  the Task Mode dashboard instead. Re-paste the card.
+- **Cool-Down split out to `dashboard-cooldown.yaml`**, a new file. It was
+  always meant to be the owner's own farm's card, offered to a customer only
+  if asked (see `cool-down-mode.md`'s original dashboard decision) - it had
+  just never been physically separated from the shared Controls card.
+  Deliberately left out of `render-farm-yaml.py`'s `ROOT_FILES`, so a newly
+  rendered farm does not get it by default. No entity, unique_id or MQTT
+  topic changed for Cool-Down itself.
+
 ## 1.5.1
 
 Duplicate bridge protection. Safe to upgrade: no entity ID, unique_id or MQTT

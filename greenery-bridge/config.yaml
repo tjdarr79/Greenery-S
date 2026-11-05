@@ -1,6 +1,6 @@
 ---
 name: Greenery S Farm Bridge
-version: "1.5.1"
+version: "1.5.2"
 slug: greenery_bridge
 description: >-
   Publishes Freight Farms Greenery S sensors, relay states and Task Mode

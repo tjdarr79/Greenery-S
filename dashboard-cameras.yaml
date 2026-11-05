@@ -1,8 +1,10 @@
 # ---------------------------------------------------------------------------
 # CAMERAS CARD - its own view, so six photos never slow the main view
 #
-# 1. Dashboard -> Edit -> + (add view). Title: Cameras. URL: farm-cameras
-#    (the Cameras button in dashboard-controls.yaml opens this URL).
+# 1. Dashboard -> Edit -> + (add view). Title: Cameras. URL: farm-cameras.
+#    Reached by its own view tab - dashboard-controls.yaml has no button to
+#    it (Controls is controls only; the main mobile dashboard shows the
+#    latest photos directly, above Nursery and Cultivation).
 # 2. In that view: Add Card -> Manual, then paste this block.
 #
 # The latest photo from each camera, like the farmhand mobile app - there is
