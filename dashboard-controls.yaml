@@ -1,5 +1,7 @@
 # ---------------------------------------------------------------------------
 # CONTROLS CARD - generic, shipped to every farm via render-farm-yaml.py.
+# Controls only: no cameras here. Camera photos live on the main mobile
+# dashboard (farm-dashboard-mobile.yaml), above Nursery and Cultivation.
 # Farm-specific controls (Cool-Down) live in their own file, not here - see
 # dashboard-cooldown.yaml.
 #
@@ -28,9 +30,6 @@
 # Settings" writes farmhand's own 24-hour flags and works in auto. To put any
 # card elsewhere, cut its block into its own Manual card and remove its
 # leading indentation.
-#
-# The Cameras button at the bottom opens the Cameras view - set up from
-# dashboard-cameras.yaml.
 #
 # 3. A tile toggles its switch on an ICON tap by default - with no
 #    confirmation. Every switch tile therefore sets icon_tap_action as well as
@@ -234,15 +233,3 @@ cards:
       - type: tile
         entity: sensor.greenery_s_farm_farmhand_version
         name: farmhand version
-
-  # Opens the Cameras view (dashboard-cameras.yaml), kept off this view so six
-  # photos never slow it on a phone. A relative path: works when the Cameras
-  # view, URL farm-cameras, is in the same dashboard as this card.
-  - type: button
-    show_name: true
-    show_icon: true
-    name: Cameras
-    icon: mdi:cctv
-    tap_action:
-      action: navigate
-      navigation_path: farm-cameras

@@ -453,5 +453,8 @@ def test_cameras_card():
     assert conditional["conditions"][0]["entity"] == "binary_sensor.greenery_s_farm_camera_photos_stale"
     assert conditional["conditions"][0]["state"] == "on"
 
+    # Controls is controls only (2026-11-05): no camera entity and no link to
+    # this view belongs there. The Cameras view is reached by its own tab.
     controls = (ROOT / "dashboard-controls.yaml").read_text(encoding="utf-8")
-    assert "navigation_path: farm-cameras" in controls
+    assert "navigation_path: farm-cameras" not in controls
+    assert "camera." not in controls

@@ -180,13 +180,15 @@ Both carry a **Dosing Tanks** card under Environmental, with the four
 
 ### 6. Optional — Task Mode control
 
-`dashboard-controls.yaml` is the **Controls** card: Enter/Exit Task Mode
-buttons with confirmation guards first, then **Key Equipment** status, a
-**Pumps (Task Mode only)** card, an **Exhaust Fan (Task Mode only)** card, a
-**24-Hour Settings** card, and a **Cameras** button that opens the Cameras
-view. Read **Task Mode control**, **Pump switches (Task Mode only)** and
-**24-hour settings switches** first: the commands are undocumented, and every
-card must carry `confirmation:` or a pocket-tap will stop the farm.
+`dashboard-controls.yaml` is the **Controls** card - controls only, no
+cameras: Enter/Exit Task Mode buttons with confirmation guards first, then
+**Key Equipment** status, a **Pumps (Task Mode only)** card, an **Exhaust
+Fan (Task Mode only)** card, and a **24-Hour Settings** card. Camera photos
+live on the main mobile dashboard (`farm-dashboard-mobile.yaml`), above
+Nursery and Cultivation - see **Cameras (latest photo only)**. Read **Task
+Mode control**, **Pump switches (Task Mode only)** and **24-hour settings
+switches** first: the commands are undocumented, and every card must carry
+`confirmation:` or a pocket-tap will stop the farm.
 
 `dashboard-cooldown.yaml` is the **Cool-Down** card - separate on purpose.
 It's the owner's own farm's routine (see **Cool-Down (phone only)**), not
@@ -207,7 +209,7 @@ it to a customer only if they ask.
 | `watchdog-helpers.yaml` | Helper setup: Farm Name (alert titles), plus helpers + Ping for the CloudGate watchdog |
 | `farm-dashboard.yaml` | Desktop dashboard, with the Dosing Tanks card under Environmental |
 | `farm-dashboard-mobile.yaml` | Phone dashboard, the same cards stacked, with the farm logo and the latest camera photos above Nursery and Cultivation |
-| `dashboard-controls.yaml` | Controls card: Task Mode first, Key Equipment, the Task-Mode-only pump switches, the Task-Mode-only exhaust fan switch, 24-hour settings, a button to the Cameras view |
+| `dashboard-controls.yaml` | Controls card, controls only: Task Mode first, Key Equipment, the Task-Mode-only pump switches, the Task-Mode-only exhaust fan switch, 24-hour settings. No cameras - those are on the main mobile dashboard |
 | `dashboard-task-mode.yaml` | Standalone phone dashboard: Task Mode status, Enter/Return buttons, every pump's relay state, pump switches (shown only in Task Mode) |
 | `dashboard-cooldown.yaml` | Cool-Down card - owner's farm only, not in `render-farm-yaml.py`'s default set |
 | `dashboard-cameras.yaml` | Cameras card: the latest photo from each of the six cameras, for its own view |

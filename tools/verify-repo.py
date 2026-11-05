@@ -317,7 +317,6 @@ MARKERS = {
         ("Turn the Exhaust Fan on/off?", "Exhaust Fan confirmation"),
         ("title: 24-Hour Settings", "24-hour settings card"),
         ("sensor.greenery_s_farm_farmhand_version", "farmhand version on the card"),
-        ("navigation_path: farm-cameras", "button to the Cameras view"),
     ],
     "dashboard-cooldown.yaml": [
         ("confirmation:", "confirmation guard"),
@@ -574,6 +573,11 @@ def main():
             for name, _icon, _pair in fh24_switches.values():
                 ent = "switch.greenery_s_farm_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
                 check(ent in text, f"{rel}: tile for {name}", f"expected {ent}")
+            # Controls only - cameras live on the main mobile dashboard. A
+            # camera entity or a link to the Cameras view sneaking back in
+            # here is the decision from 2026-11-05 getting undone.
+            check("camera." not in text and "farm-cameras" not in text,
+                  f"{rel}: no cameras - they live on farm-dashboard-mobile.yaml")
 
     print("\n--- Cameras: latest photo only ---")
     # The owner chose no photo history: nothing on disk, ever. A file write in
